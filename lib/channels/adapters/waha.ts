@@ -12,6 +12,7 @@ import { wahaSendPlanFor } from "@/lib/waha/media-send";
 import { resolveWhatsappIdForContactCard } from "@/lib/waha/resolve-contact-whatsapp-id";
 import { bareWaMessageId, parseWahaMessageId } from "@/lib/waha/message-id";
 import { resolveWahaChatId } from "@/lib/waha/send";
+import { typingDelayMs } from "@/lib/waha/typing";
 import type { FetchedMedia } from "@/lib/messaging/media/types";
 import { DETALHE_CREDENCIAL_RECUSADA } from "../health";
 import type { ChannelAdapter, ChannelHealth, OutboundEnvelope, RecipientInput } from "../types";
@@ -200,14 +201,39 @@ export const wahaAdapter: ChannelAdapter = {
         wahaSendPlanFor(envelope.kind, envelope.media),
       );
     } else {
-      res = await client.sendMessage(
-        envelope.sessionRef,
-        envelope.to,
-        envelope.body ?? "",
-        // A citação é enfeite da conversa, nunca condição de envio: quando não
-        // há, o envio segue igual. Ver `OutboundEnvelope.replyToExternalId`.
-        envelope.replyToExternalId,
-      );
+      const corpo = envelope.body ?? "";
+      // "digitando..." antes da bolha. BEST-EFFORT E NADA MAIS: o try/catch é a
+      // regra, não a exceção — se o WAHA recusar a presença, o cliente prefere
+      // muito receber a mensagem sem o gesto a não receber. Por isso a espera
+      // também só acontece depois de o start ter dado certo: dormir 2s para
+      // então enviar sem nunca ter mostrado presença é latência pura.
+      let digitou = false;
+      const esperaMs = typingDelayMs(corpo);
+      if (esperaMs > 0) {
+        try {
+          await client.startTyping(envelope.sessionRef, envelope.to);
+          digitou = true;
+          await new Promise((resolve) => setTimeout(resolve, esperaMs));
+        } catch {
+          // presença indisponível — segue direto para o envio
+        }
+      }
+      try {
+        res = await client.sendMessage(
+          envelope.sessionRef,
+          envelope.to,
+          corpo,
+          // A citação é enfeite da conversa, nunca condição de envio: quando não
+          // há, o envio segue igual. Ver `OutboundEnvelope.replyToExternalId`.
+          envelope.replyToExternalId,
+        );
+      } catch (err) {
+        // O envio falhou DEPOIS de a presença ter aparecido: sem isto o chat
+        // fica "digitando" até o WhatsApp expirar sozinho (~25s), anunciando uma
+        // resposta que não vem. Limpar não pode mascarar a falha do envio.
+        if (digitou) await client.stopTyping(envelope.sessionRef, envelope.to).catch(() => {});
+        throw err;
+      }
     }
 
     return { externalId: parseWahaMessageId(res) };

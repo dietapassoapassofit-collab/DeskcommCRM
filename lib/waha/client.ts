@@ -367,6 +367,38 @@ export class WahaClient {
   }
 
   /**
+   * Presença "digitando..." no chat (F-humanização).
+   *
+   * ENFEITE, NUNCA CONDIÇÃO DE ENVIO: quem chama trata falha como no-op. Um 4xx
+   * do WAHA aqui não pode custar a mensagem — o cliente prefere receber sem o
+   * "digitando" a não receber. Por isso o erro sobe como exceção normal e o
+   * adapter a engole; não silenciamos AQUI para não esconder um endpoint que
+   * sumiu numa troca de engine.
+   *
+   * O WhatsApp expira a presença sozinho em ~25s; `stopTyping` existe para o
+   * caso de o envio falhar depois do start e o chat ficar "digitando" à toa.
+   */
+  async startTyping(session: string, chatId: string): Promise<void> {
+    await this.presenca("startTyping", session, chatId);
+  }
+
+  async stopTyping(session: string, chatId: string): Promise<void> {
+    await this.presenca("stopTyping", session, chatId);
+  }
+
+  private async presenca(rota: string, session: string, chatId: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/${rota}`, {
+      method: "POST",
+      headers: {
+        "X-Api-Key": this.apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ session, chatId }),
+    });
+    if (!res.ok) throw new Error(`waha_${res.status}`);
+  }
+
+  /**
    * Confere se o número existe no WhatsApp e devolve o chatId canônico.
    * Obrigatório antes de vcard em BR — o nono dígito do CRM nem sempre bate com o wa_id.
    */
