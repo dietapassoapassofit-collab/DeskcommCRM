@@ -463,6 +463,15 @@ async function handleInbound(
   const chatId = p.from ?? "";
   const parsed = parseChatId(chatId);
   if (parsed.kind === "group") return; // grupos não fazem binding CRM
+
+  // ponytail: filtro temporário de teste (Fase 0 da migração) — só processa
+  // mensagem do número em WHATSAPP_TEST_ONLY_PHONE, pra estranho que mande
+  // mensagem nesse chip de teste não virar lead nem receber resposta do
+  // agente. Sem a env var, no-op — remover quando o número real da Galega
+  // entrar (Fase 4).
+  const numeroDeTeste = process.env.WHATSAPP_TEST_ONLY_PHONE;
+  if (numeroDeTeste && parsed.kind === "phone" && parsed.phone !== numeroDeTeste) return;
+
   if (!p.id) return;
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
   const texto = bodyOf(p);
