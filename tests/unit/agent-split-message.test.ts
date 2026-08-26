@@ -40,4 +40,39 @@ describe("splitIntoBubbles", () => {
     expect(out.join(" ")).toContain("149");
     expect(out.join(" ")).toContain("central");
   });
+  it("parágrafo é fronteira dura: três aparelhos não viram um bloco de preços", () => {
+    // O caso real. Somados dão 134 caracteres e cabiam no teto de 140, então a
+    // versão que colava unidades adjacentes devolvia UMA bolha — e o cliente
+    // recebia os três preços em texto corrido, tendo que varrer com o olho pra
+    // achar o valor de cada aparelho.
+    const texto = [
+      "Não tem o Poco X6 no momento.",
+      "Poco X7 12GB/512GB verde — R$ 1.920",
+      "Poco X7 Pro 12GB/512GB preto — R$ 2.250",
+      "Poco M8 Pro 5G 8GB/256GB — R$ 1.900",
+    ].join("\n\n");
+
+    const out = splitIntoBubbles(texto, 140);
+
+    expect(out).toHaveLength(4);
+    expect(out[1]).toBe("Poco X7 12GB/512GB verde — R$ 1.920");
+    expect(out[3]).toBe("Poco M8 Pro 5G 8GB/256GB — R$ 1.900");
+  });
+
+  it("dentro de UM parágrafo, sentenças curtas ainda se juntam", () => {
+    // O teto continua sendo teto: a mudança confina a junção ao parágrafo, não
+    // a proíbe. Sem esta garantia, cada frase viraria uma mensagem e o pacing
+    // anti-ban transformaria uma resposta em seis envios.
+    const out = splitIntoBubbles("Oi. Tudo bem? Beleza.", 100);
+    expect(out).toHaveLength(1);
+  });
+
+  it("parágrafo maior que o teto ainda é fatiado, sem encostar no vizinho", () => {
+    const longo = "Frase de teste bem comprida aqui. ".repeat(6).trim();
+    const out = splitIntoBubbles(`curto\n\n${longo}`, 60);
+
+    expect(out[0]).toBe("curto");
+    expect(out.length).toBeGreaterThan(2);
+    expect(out.every((b) => b.length <= 60)).toBe(true);
+  });
 });

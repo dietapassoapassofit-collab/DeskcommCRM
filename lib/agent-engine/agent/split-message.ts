@@ -1,43 +1,52 @@
 /**
  * Quebra o texto da resposta em "bolhas" curtas (Onda 4) — parágrafo → sentença
- * → palavra, juntando pedaços adjacentes que caibam em maxChars. Puro. Usado no
- * send do agente quando split_messages está on; o pacing anti-ban espaça cada
- * bolha. Nunca devolve bolha vazia nem (salvo palavra atômica gigante) > maxChars.
+ * → palavra. Puro. Usado no send do agente quando split_messages está on; o
+ * pacing anti-ban espaça cada bolha. Nunca devolve bolha vazia nem (salvo
+ * palavra atômica gigante) > maxChars.
+ *
+ * `maxChars` é TETO, NUNCA ALVO — e essa distinção é o comportamento inteiro.
+ * Antes, unidades adjacentes eram coladas com espaço enquanto coubessem, o que
+ * DESFAZIA a separação que o autor escreveu: três celulares em três linhas,
+ * somando 134 caracteres, voltavam ao cliente como um parágrafo corrido de
+ * preços. Quem lê no WhatsApp precisa varrer isso com o olho para achar o valor
+ * de cada aparelho — que é justamente o momento em que ele desiste.
+ *
+ * Então parágrafo (`\n{2,}`) é fronteira DURA: cada um vira ao menos uma bolha.
+ * A junção sobrevive só onde tem sentido — entre sentenças de um MESMO
+ * parágrafo que estourou o teto e precisou ser fatiado. Texto sem parágrafo
+ * nenhum se comporta exatamente como antes.
  */
 export function splitIntoBubbles(text: string, maxChars: number): string[] {
   const trimmed = (text ?? "").trim();
   if (trimmed === "") return [];
-  if (trimmed.length <= maxChars) return [trimmed];
 
-  // Unidades atômicas: parágrafos → sentenças. Cada unidade que ainda estoura é
-  // quebrada por palavra.
-  const units: string[] = [];
+  const bubbles: string[] = [];
   for (const para of trimmed.split(/\n{2,}/)) {
     const p = para.trim();
     if (p === "") continue;
     if (p.length <= maxChars) {
-      units.push(p);
+      bubbles.push(p);
       continue;
     }
+    // Parágrafo grande demais: fatia em sentenças e reagrupa até o teto. A
+    // reagrupagem fica CONFINADA a este parágrafo — não encosta no vizinho.
+    const pedacos: string[] = [];
     for (const sentence of splitSentences(p)) {
-      if (sentence.length <= maxChars) units.push(sentence);
-      else units.push(...splitWords(sentence, maxChars));
+      if (sentence.length <= maxChars) pedacos.push(sentence);
+      else pedacos.push(...splitWords(sentence, maxChars));
     }
-  }
-
-  // Junta unidades adjacentes enquanto couberem (com espaço).
-  const bubbles: string[] = [];
-  let cur = "";
-  for (const u of units) {
-    const joined = cur === "" ? u : `${cur} ${u}`;
-    if (joined.length <= maxChars) {
-      cur = joined;
-    } else {
-      if (cur !== "") bubbles.push(cur);
-      cur = u;
+    let cur = "";
+    for (const u of pedacos) {
+      const joined = cur === "" ? u : `${cur} ${u}`;
+      if (joined.length <= maxChars) {
+        cur = joined;
+      } else {
+        if (cur !== "") bubbles.push(cur);
+        cur = u;
+      }
     }
+    if (cur !== "") bubbles.push(cur);
   }
-  if (cur !== "") bubbles.push(cur);
   return bubbles;
 }
 
