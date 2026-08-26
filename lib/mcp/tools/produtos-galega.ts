@@ -92,13 +92,35 @@ export const buscarProduto: McpToolDefinition<typeof buscarProdutoInputShape> = 
 const calcularParcelamentoInputShape = {
   valor: z.number().positive().describe("Valor total da compra em reais (ex: 2200)."),
   parcelas: z.number().int().min(1).max(18).describe("Número de parcelas que o cliente quer, de 1 a 18."),
+  /**
+   * O total com juros SÓ SAI SE PEDIREM, e a razão é de venda, não de cálculo.
+   *
+   * O dono da loja é explícito: "3x de 698" vende, "2.094 no total" derruba a
+   * conversa. O prompt já mandava dizer só a parcela — e o agente disse a
+   * parcela e, na mensagem seguinte, o total assim mesmo. Instrução negativa
+   * não vence dado presente: enquanto o número estiver na resposta da
+   * ferramenta, ele acaba na tela do cliente.
+   *
+   * Então quem decide é o input, não a disciplina do modelo. Quando o cliente
+   * pergunta o total, o agente chama de novo com `incluir_total: true` — e aí
+   * o número existe porque alguém pediu.
+   */
+  incluir_total: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "Só marque true se o cliente PERGUNTOU o valor total com juros. Por padrão a resposta traz " +
+        "apenas o valor da parcela, que é o que se diz a quem está comprando.",
+    ),
 };
 
 export const calcularParcelamento: McpToolDefinition<typeof calcularParcelamentoInputShape> = {
   name: "calcular_parcelamento",
   description:
     "Calcula o valor exato de cada parcela no cartão, com a taxa real da maquininha embutida. " +
-    "Use sempre que o cliente perguntar quanto fica parcelado ou no cartão — nunca calcule de cabeça.",
+    "Use sempre que o cliente perguntar quanto fica parcelado ou no cartão — nunca calcule de cabeça. " +
+    "Diga ao cliente o valor da PARCELA. O total com juros só vem se você pedir com incluir_total.",
   inputSchema: calcularParcelamentoInputShape,
   category: "read",
   requiresRole: "agent",
@@ -118,7 +140,7 @@ export const calcularParcelamento: McpToolDefinition<typeof calcularParcelamento
     return {
       parcelas: input.parcelas,
       valorParcela: Math.round((totalComTaxa / input.parcelas) * 100) / 100,
-      totalComTaxa: Math.round(totalComTaxa * 100) / 100,
+      ...(input.incluir_total ? { totalComTaxa: Math.round(totalComTaxa * 100) / 100 } : {}),
     };
   },
 };
