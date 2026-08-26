@@ -357,6 +357,12 @@ Ao mexer em schema, RLS, RBAC, atribuição, escopo, roteamento, follow-up, webh
 
 ## Migrations & Banco — DOUTRINA (projeto open-source)
 
+> **Instalação CR Digital:** este banco é compartilhado com o bot interno de
+> WhatsApp da CR Digital, que lê seis tabelas próprias. Migration que encoste
+> numa delas quebra o bot em silêncio — os testes daqui passam. A lista e o
+> procedimento estão em `INSTALACAO-CR-DIGITAL.md`. Irrelevante para quem
+> clonou o produto; apagar ao publicar upstream.
+
 **Este projeto é open-source. Toda mudança de schema DEVE sair como migration versionada** — quem clonou uma versão antiga do banco precisa conseguir atualizar aplicando as migrations em ordem. **Nunca** aplique `ALTER`/`CREATE` solto no banco sem o arquivo correspondente. Isto é critério de aceite de TODA sessão, não opcional.
 
 Processo padrão (siga sempre):
