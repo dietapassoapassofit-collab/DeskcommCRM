@@ -69,6 +69,26 @@ function evento(chatDigits: string, fromMe: boolean): WahaEnvelope {
   return { event: "message", session: "sessao-waha", payload } as WahaEnvelope;
 }
 
+/**
+ * O formato REAL da engine NOWEB: o chat é uma identidade opaca `@lid` e o
+ * telefone só existe em `remoteJidAlt`. Todo contato desta instalação chega
+ * assim — inclusive o de teste.
+ */
+function eventoLid(lid: string, telefoneAlt: string | null): WahaEnvelope {
+  const chat = `${lid}@lid`;
+  const payload = {
+    id: `false_${chat}_ABC`,
+    timestamp: 1,
+    body: "mensagem qualquer",
+    fromMe: false,
+    from: chat,
+    ...(telefoneAlt
+      ? { _data: { key: { remoteJidAlt: `${telefoneAlt.replace("+", "")}@s.whatsapp.net` } } }
+      : {}),
+  } as unknown as WahaPayload;
+  return { event: "message", session: "sessao-waha", payload } as WahaEnvelope;
+}
+
 afterEach(() => {
   delete process.env.WHATSAPP_TEST_ONLY_PHONE;
 });
@@ -88,6 +108,42 @@ describe("filtro WHATSAPP_TEST_ONLY_PHONE", () => {
     const { admin, messages } = bancoDeMentira();
 
     await dispatchWahaEvent(admin as never, SESSION as never, evento(OUTRO.replace("+", ""), false), "req-2");
+
+    expect(messages).toHaveLength(0);
+  });
+
+  it("descarta chat @lid de OUTRA pessoa — o formato que a engine NOWEB usa de verdade", async () => {
+    // O caso que passou batido: escrito como denylist sobre `kind === "phone"`,
+    // o gate nunca disparava aqui, e o agente da loja respondeu a um colega.
+    process.env.WHATSAPP_TEST_ONLY_PHONE = NUMERO_DE_TESTE;
+    const { admin, messages } = bancoDeMentira();
+
+    await dispatchWahaEvent(admin as never, SESSION as never, eventoLid("79388209111041", OUTRO), "req-lid-1");
+
+    expect(messages).toHaveLength(0);
+  });
+
+  it("deixa passar o chat @lid cujo remoteJidAlt É o número de teste", async () => {
+    // O contrapeso: allowlist que barra todo mundo cala também quem devia
+    // passar, e o teste inteiro deixaria de acontecer sem ninguém entender.
+    process.env.WHATSAPP_TEST_ONLY_PHONE = NUMERO_DE_TESTE;
+    const { admin, messages } = bancoDeMentira();
+
+    await dispatchWahaEvent(
+      admin as never,
+      SESSION as never,
+      eventoLid("33454137847869", NUMERO_DE_TESTE),
+      "req-lid-2",
+    );
+
+    expect(messages.length).toBeGreaterThan(0);
+  });
+
+  it("descarta chat @lid SEM telefone no payload — não dá para saber quem é", async () => {
+    process.env.WHATSAPP_TEST_ONLY_PHONE = NUMERO_DE_TESTE;
+    const { admin, messages } = bancoDeMentira();
+
+    await dispatchWahaEvent(admin as never, SESSION as never, eventoLid("99999999999999", null), "req-lid-3");
 
     expect(messages).toHaveLength(0);
   });

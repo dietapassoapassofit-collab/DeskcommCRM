@@ -455,19 +455,30 @@ async function markConversation(
  * Filtro temporário de teste (Fase 0 da migração): só deixa passar o chat do
  * número em WHATSAPP_TEST_ONLY_PHONE. Sem a env var, no-op.
  *
- * VALE NOS DOIS SENTIDOS, e é por isso que mora aqui em vez de inline no
- * inbound. Enquanto guardava só o `fromMe=false`, tudo que o OUTRO bot pareado
- * neste mesmo chip enviava entrava como `fromMe=true` e virava mensagem da
- * conversa — 18 das 20 da janela de contexto do agente eram relatório de Meta
- * Ads e aviso de deploy do bot interno. O agente não tinha como saber que
- * aquilo não era a conversa dele.
+ * É ALLOWLIST, e a diferença não é estilo. Escrito como denylist
+ * (`kind === "phone" && phone !== teste`) ele só barrava o formato que previa e
+ * deixava passar todo o resto — e na engine NOWEB o resto é TUDO: o chatId vem
+ * como `<digitos>@lid`, então `kind` é 'lid' e o gate nunca disparava. Ele
+ * parecia funcionar apenas porque uma só pessoa escrevia no chip. No dia em que
+ * outra escreveu, o agente da loja respondeu a ela.
+ *
+ * O telefone real vem do PAYLOAD (`remoteJidAlt`), que é de onde o upsert de
+ * contato já tira o `phone_number` — comparar só o chatId é olhar para a
+ * identidade opaca e concluir que não se sabe quem é.
+ *
+ * VALE NOS DOIS SENTIDOS: enquanto guardava só o `fromMe=false`, tudo que o
+ * OUTRO bot pareado neste mesmo chip enviava entrava como `fromMe=true` e
+ * virava mensagem da conversa — 18 das 20 da janela de contexto do agente eram
+ * relatório de Meta Ads e aviso de deploy de um bot que não é este.
  *
  * Remover junto com a env var quando o número próprio da Galega entrar (Fase 4).
  */
-function foraDoChatDeTeste(parsed: ChatIdentity): boolean {
+function foraDoChatDeTeste(parsed: ChatIdentity, p: WahaPayload): boolean {
   const numeroDeTeste = process.env.WHATSAPP_TEST_ONLY_PHONE;
   if (!numeroDeTeste) return false;
-  return parsed.kind === "phone" && parsed.phone !== numeroDeTeste;
+  if (parsed.kind === "phone" && parsed.phone === numeroDeTeste) return false;
+  if (telefoneAlternativoDe(p) === numeroDeTeste) return false;
+  return true;
 }
 
 /**
@@ -483,7 +494,7 @@ async function handleInbound(
   const parsed = parseChatId(chatId);
   if (parsed.kind === "group") return; // grupos não fazem binding CRM
 
-  if (foraDoChatDeTeste(parsed)) return;
+  if (foraDoChatDeTeste(parsed, p)) return;
 
   if (!p.id) return;
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
@@ -666,7 +677,7 @@ async function handleOutboundFromUserPhone(
   const chatId = p.to ?? chatIdFromWaMessageId(p.id ?? "") ?? p.from ?? "";
   const parsed = parseChatId(chatId);
   if (parsed.kind === "group") return;
-  if (foraDoChatDeTeste(parsed)) return;
+  if (foraDoChatDeTeste(parsed, p)) return;
   if (!p.id) return;
   if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
   // Idem inbound. Aqui o caso que mais dói é o chatId vazio: é literalmente o
