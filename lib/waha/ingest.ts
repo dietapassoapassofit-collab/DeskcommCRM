@@ -452,6 +452,25 @@ async function markConversation(
 }
 
 /**
+ * Filtro temporário de teste (Fase 0 da migração): só deixa passar o chat do
+ * número em WHATSAPP_TEST_ONLY_PHONE. Sem a env var, no-op.
+ *
+ * VALE NOS DOIS SENTIDOS, e é por isso que mora aqui em vez de inline no
+ * inbound. Enquanto guardava só o `fromMe=false`, tudo que o OUTRO bot pareado
+ * neste mesmo chip enviava entrava como `fromMe=true` e virava mensagem da
+ * conversa — 18 das 20 da janela de contexto do agente eram relatório de Meta
+ * Ads e aviso de deploy do bot interno. O agente não tinha como saber que
+ * aquilo não era a conversa dele.
+ *
+ * Remover junto com a env var quando o número próprio da Galega entrar (Fase 4).
+ */
+function foraDoChatDeTeste(parsed: ChatIdentity): boolean {
+  const numeroDeTeste = process.env.WHATSAPP_TEST_ONLY_PHONE;
+  if (!numeroDeTeste) return false;
+  return parsed.kind === "phone" && parsed.phone !== numeroDeTeste;
+}
+
+/**
  * Mensagem recebida (fromMe=false). Contato = remetente (`from`).
  */
 async function handleInbound(
@@ -464,13 +483,7 @@ async function handleInbound(
   const parsed = parseChatId(chatId);
   if (parsed.kind === "group") return; // grupos não fazem binding CRM
 
-  // ponytail: filtro temporário de teste (Fase 0 da migração) — só processa
-  // mensagem do número em WHATSAPP_TEST_ONLY_PHONE, pra estranho que mande
-  // mensagem nesse chip de teste não virar lead nem receber resposta do
-  // agente. Sem a env var, no-op — remover quando o número real da Galega
-  // entrar (Fase 4).
-  const numeroDeTeste = process.env.WHATSAPP_TEST_ONLY_PHONE;
-  if (numeroDeTeste && parsed.kind === "phone" && parsed.phone !== numeroDeTeste) return;
+  if (foraDoChatDeTeste(parsed)) return;
 
   if (!p.id) return;
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
@@ -653,6 +666,7 @@ async function handleOutboundFromUserPhone(
   const chatId = p.to ?? chatIdFromWaMessageId(p.id ?? "") ?? p.from ?? "";
   const parsed = parseChatId(chatId);
   if (parsed.kind === "group") return;
+  if (foraDoChatDeTeste(parsed)) return;
   if (!p.id) return;
   if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
   // Idem inbound. Aqui o caso que mais dói é o chatId vazio: é literalmente o

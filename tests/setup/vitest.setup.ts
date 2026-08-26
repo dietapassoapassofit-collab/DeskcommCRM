@@ -20,6 +20,22 @@ for (const envFile of [".env", ".env.local"]) {
 }
 
 /**
+ * Knobs de operação NÃO atravessam para a suíte.
+ *
+ * O setup acima copia `.env`/`.env.local` inteiros para poder importar código
+ * que valida env na carga. Isso trouxe junto `WHATSAPP_TEST_ONLY_PHONE`, que na
+ * staging restringe a ingestão a um único número — e dentro do teste ele passou
+ * a descartar em silêncio todo payload construído com qualquer outro número.
+ * Quatro testes do ingest ficaram vermelhos sem nenhum defeito no ingest, e o
+ * primeiro deles passou um dia inteiro sendo lido como "quebrado desde tal
+ * commit".
+ *
+ * Quem PRECISA do filtro (ingest-filtro-de-teste.test.ts) o define no próprio
+ * teste e limpa depois — que é como um knob deve entrar numa suíte.
+ */
+delete process.env.WHATSAPP_TEST_ONLY_PHONE;
+
+/**
  * Placeholders para as vars que `lib/env.ts` exige na IMPORTAÇÃO.
  *
  * Sem isto, qualquer arquivo de teste que importe (mesmo transitivamente) um

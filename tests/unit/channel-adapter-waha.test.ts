@@ -116,9 +116,14 @@ describe('adapter WAHA', () => {
     });
 
     expect(res).toEqual({ externalId: 'ABC123' });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(`${WAHA_BASE}/api/sendText`);
+
+    // Duas idas ao WAHA, NESTA ordem: a presenca "digitando..." e so entao o
+    // texto. A ordem e o comportamento - presenca DEPOIS do envio nao e gesto
+    // nenhum, e o chat piscando sozinho com a mensagem ja entregue.
+    const rotas = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(rotas).toEqual([`${WAHA_BASE}/api/startTyping`, `${WAHA_BASE}/api/sendText`]);
+
+    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(JSON.parse(String(init.body))).toEqual({
       session: 'default',
       chatId: '5531999998888@c.us',

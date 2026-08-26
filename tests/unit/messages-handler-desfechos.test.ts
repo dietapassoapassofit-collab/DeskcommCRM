@@ -275,12 +275,16 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
     expect(msg.external_id).toBe('TEXT1');
     expect(msg.ack).toBe(0);
     expect(msg.error_code).toBeNull();
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`${WAHA_BASE}/api/sendText`);
+    // A presenca "digitando..." vai na frente do texto, entao o envio e a
+    // SEGUNDA ida ao WAHA. Afirmar as duas rotas em ordem, e nao so o indice,
+    // deixa o teste falhar alto se alguem inverter isso.
+    const rotasWaha = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(rotasWaha).toEqual([`${WAHA_BASE}/api/startTyping`, `${WAHA_BASE}/api/sendText`]);
     // Task 7: a sessão que chega ao fio sai de `resolveSessionRef` (que escolhe a
     // COLUNA conforme o provider), não mais de um acesso direto à coluna do
     // provider legado. Sem esta linha, um resolvedor que devolva a coluna errada
     // manda `session: undefined` e a rede inteira continua verde — medido.
-    const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body)) as {
+    const body = JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body)) as {
       session: string;
     };
     expect(body.session).toBe('default');
