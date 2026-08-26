@@ -16,6 +16,22 @@ import type { McpToolDefinition } from "../types";
 
 const buscarProdutoInputShape = {
   termo: z.string().trim().min(2).describe("Parte do nome do produto (ex: 'iphone 13', 'jbl go 4')."),
+  /**
+   * O filtro que decide se o agente ACHA o celular.
+   *
+   * A ordenação é por estoque, e o catálogo tem 3.049 acessórios contra 105
+   * aparelhos — capinha tem 111 unidades, celular tem 1 a 15. Buscar "poco"
+   * sem categoria devolvia oito capinhas e nenhum telefone, e o agente
+   * concluía, com a autoridade de quem consultou, que não havia Poco nenhum
+   * na loja. Havia quinze.
+   */
+  categoria: z
+    .enum(["Aparelho", "Acessório"])
+    .optional()
+    .describe(
+      "Filtra por tipo. Use 'Aparelho' quando o cliente pergunta por um CELULAR — sem isso os " +
+        "acessórios do mesmo modelo (capinha, película, bateria) ocupam a resposta inteira.",
+    ),
   limite: z.number().int().min(1).max(20).optional().default(8),
   somente_disponiveis: z.boolean().optional().default(true),
 };
@@ -25,7 +41,10 @@ export const buscarProduto: McpToolDefinition<typeof buscarProdutoInputShape> = 
   description:
     "Busca produtos no catálogo próprio da loja por parte do nome. Devolve categoria, condição " +
     "(lacrado/seminovo/vitrine), preço e estoque reais. Use sempre que o cliente citar um produto " +
-    "específico, antes de responder qualquer coisa sobre preço ou disponibilidade.",
+    "específico, antes de responder qualquer coisa sobre preço ou disponibilidade. " +
+    "Para CELULAR, passe categoria='Aparelho'. Se o modelo exato não aparecer, busque de novo só " +
+    "pela MARCA (ex: termo='poco', categoria='Aparelho') antes de dizer que não tem — não ter " +
+    "aquele modelo não significa não ter nada da marca.",
   inputSchema: buscarProdutoInputShape,
   category: "read",
   requiresRole: "agent",
@@ -40,6 +59,7 @@ export const buscarProduto: McpToolDefinition<typeof buscarProdutoInputShape> = 
       .order("stock_qty", { ascending: false })
       .limit(input.limite);
 
+    if (input.categoria) q = q.eq("category", input.categoria);
     if (input.somente_disponiveis) q = q.gt("stock_qty", 0);
 
     const { data, error } = await q;
@@ -47,8 +67,19 @@ export const buscarProduto: McpToolDefinition<typeof buscarProdutoInputShape> = 
 
     return {
       produtos: data ?? [],
+      // O aviso diz o que fazer A SEGUIR, e não só que deu vazio. Zero
+      // resultado para um modelo específico é a hora de olhar a marca inteira
+      // — sem isso o agente encerra o assunto em cima de uma busca que ele
+      // mesmo estreitou demais.
       ...(data && data.length === 0
-        ? { aviso: input.somente_disponiveis ? "nada com esse nome em estoque" : "nada com esse nome no catálogo" }
+        ? {
+            aviso: input.somente_disponiveis
+              ? "nada com esse nome em estoque"
+              : "nada com esse nome no catálogo",
+            sugestao:
+              "Antes de dizer ao cliente que não tem, busque de novo só pela marca " +
+              "(ex: termo='poco', categoria='Aparelho') e ofereça o que existir.",
+          }
         : {}),
     };
   },
