@@ -12,10 +12,18 @@ export interface TranscriptionCreds {
   apiKey: string;
   model?: string;
   baseUrl?: string;
+  /** ISO-639-1 ("pt"). Sem ele o Whisper adivinha — e em áudio curto de WhatsApp já devolveu romeno. */
+  language?: string;
 }
 
 const DEFAULT_BASE = "https://api.openai.com";
 const DEFAULT_MODEL = "whisper-1";
+
+/** "pt-BR" -> "pt": o Whisper aceita ISO-639-1. Locale inválido/ausente -> undefined (o Whisper adivinha). */
+export function idiomaDaTranscricao(locale: string | null | undefined): string | undefined {
+  const base = (locale ?? "").split(/[-_]/)[0]!.trim().toLowerCase();
+  return /^[a-z]{2}$/.test(base) ? base : undefined;
+}
 
 function extFor(mime: string): string {
   const base = mime.split(";")[0]!.trim().toLowerCase();
@@ -37,6 +45,7 @@ export function apiTranscriptionProvider(
     async transcribe(audio, mime) {
       const form = new FormData();
       form.append("model", model);
+      if (creds.language) form.append("language", creds.language);
       form.append(
         "file",
         new Blob([new Uint8Array(audio)], { type: mime.split(";")[0]!.trim() }),

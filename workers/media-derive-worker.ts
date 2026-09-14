@@ -16,7 +16,7 @@ import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { deriveMediaText, type DeriveDeps } from "@/lib/messaging/media/derive";
 import { TIPOS_DERIVAVEIS } from "@/lib/messaging/media/derivable";
 import { deriveVideoText } from "@/lib/messaging/media/video-derive";
-import { apiTranscriptionProvider } from "@/lib/messaging/media/transcription";
+import { apiTranscriptionProvider, idiomaDaTranscricao } from "@/lib/messaging/media/transcription";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -152,7 +152,20 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       }
     }
 
-    const deps = buildDeriveDeps(llm, openaiKey, row.organization_id);
+    // Idioma da organização para a transcrição. Falha na leitura não derruba a
+    // derivação: sem idioma o Whisper volta a adivinhar, como antes.
+    let idioma: string | undefined;
+    try {
+      const { data: org } = await admin
+        .from("organizations")
+        .select("locale")
+        .eq("id", row.organization_id)
+        .maybeSingle();
+      idioma = idiomaDaTranscricao((org as { locale?: string | null } | null)?.locale);
+    } catch {
+      idioma = undefined;
+    }
+    const deps = buildDeriveDeps(llm, openaiKey, row.organization_id, idioma);
 
     const text = await deriveMediaText(msg.type, buffer, msg.media_mime ?? "application/octet-stream", deps);
     await admin.from("messages")
@@ -202,6 +215,7 @@ function buildDeriveDeps(
   llm: { provider: string; apiKey: string; defaultModel: string | null },
   openaiKey: string | null,
   orgId: string,
+  idioma?: string,
 ): DeriveDeps {
   const registry = createDefaultRegistry();
   const visionCapable = modelCapabilities(llm.provider, llm.defaultModel ?? "").image;
@@ -254,7 +268,7 @@ function buildDeriveDeps(
   // (o derivado fica vazio e o marcador "[áudio]" continua valendo) e evita o
   // loop de 401 que retentava a cada drain.
   const transcriber: DeriveDeps["transcriber"] = openaiKey
-    ? apiTranscriptionProvider({ apiKey: openaiKey })
+    ? apiTranscriptionProvider({ apiKey: openaiKey, language: idioma })
     : {
         transcribe: async () => {
           // Mesma razão da visão: devolver "" fazia o agente responder ao áudio

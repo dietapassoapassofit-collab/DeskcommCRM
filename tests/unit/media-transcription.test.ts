@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { apiTranscriptionProvider } from "@/lib/messaging/media/transcription";
+import { apiTranscriptionProvider, idiomaDaTranscricao } from "@/lib/messaging/media/transcription";
 
 describe("apiTranscriptionProvider", () => {
   it("POSTa multipart pro endpoint de transcrição e devolve o texto", async () => {
@@ -23,5 +23,24 @@ describe("apiTranscriptionProvider", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("nope", { status: 401 }));
     const provider = apiTranscriptionProvider({ apiKey: "bad" }, fetchMock);
     await expect(provider.transcribe(Buffer.from([1]), "audio/ogg")).rejects.toThrow(/transcription_401/);
+  });
+
+  it("envia o idioma só quando a organização tem um", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ text: "oi" }), { status: 200 })),
+    );
+    await apiTranscriptionProvider({ apiKey: "k", language: "pt" }, fetchMock).transcribe(Buffer.from([1]), "audio/ogg");
+    await apiTranscriptionProvider({ apiKey: "k" }, fetchMock).transcribe(Buffer.from([1]), "audio/ogg");
+    expect((fetchMock.mock.calls[0]![1].body as FormData).get("language")).toBe("pt");
+    expect((fetchMock.mock.calls[1]![1].body as FormData).get("language")).toBeNull();
+  });
+});
+
+describe("idiomaDaTranscricao", () => {
+  it("reduz o locale ao código ISO-639-1 que o Whisper aceita", () => {
+    expect(idiomaDaTranscricao("pt-BR")).toBe("pt");
+    expect(idiomaDaTranscricao("es")).toBe("es");
+    expect(idiomaDaTranscricao(null)).toBeUndefined();
+    expect(idiomaDaTranscricao("português")).toBeUndefined();
   });
 });
