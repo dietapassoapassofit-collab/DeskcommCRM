@@ -91,6 +91,7 @@ function eventoLid(lid: string, telefoneAlt: string | null): WahaEnvelope {
 
 afterEach(() => {
   delete process.env.WHATSAPP_TEST_ONLY_PHONE;
+  delete process.env.WHATSAPP_TEST_ONLY_ORG_ID;
 });
 
 describe("filtro WHATSAPP_TEST_ONLY_PHONE", () => {
@@ -154,5 +155,26 @@ describe("filtro WHATSAPP_TEST_ONLY_PHONE", () => {
     await dispatchWahaEvent(admin as never, SESSION as never, evento(OUTRO.replace("+", ""), false), "req-3");
 
     expect(messages.length).toBeGreaterThan(0);
+  });
+
+  it("com WHATSAPP_TEST_ONLY_ORG_ID de OUTRA org, não filtra — a org do número próprio recebe tudo", async () => {
+    process.env.WHATSAPP_TEST_ONLY_PHONE = NUMERO_DE_TESTE;
+    process.env.WHATSAPP_TEST_ONLY_ORG_ID = "org-galega";
+    const { admin, messages } = bancoDeMentira();
+
+    await dispatchWahaEvent(admin as never, SESSION as never, eventoLid("79388209111041", OUTRO), "req-org-1");
+
+    expect(messages.length).toBeGreaterThan(0);
+  });
+
+  it("com WHATSAPP_TEST_ONLY_ORG_ID da PRÓPRIA org, continua filtrando nos dois sentidos", async () => {
+    process.env.WHATSAPP_TEST_ONLY_PHONE = NUMERO_DE_TESTE;
+    process.env.WHATSAPP_TEST_ONLY_ORG_ID = SESSION.organization_id;
+    const { admin, messages } = bancoDeMentira();
+
+    await dispatchWahaEvent(admin as never, SESSION as never, eventoLid("79388209111041", OUTRO), "req-org-2");
+    await dispatchWahaEvent(admin as never, SESSION as never, evento(OUTRO.replace("+", ""), true), "req-org-3");
+
+    expect(messages).toHaveLength(0);
   });
 });

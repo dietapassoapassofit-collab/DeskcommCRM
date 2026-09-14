@@ -471,11 +471,20 @@ async function markConversation(
  * virava mensagem da conversa — 18 das 20 da janela de contexto do agente eram
  * relatório de Meta Ads e aviso de deploy de um bot que não é este.
  *
- * Remover junto com a env var quando o número próprio da Galega entrar (Fase 4).
+ * ESCOPO POR ORG: o chip compartilhado é só da Galega. Uma segunda org (SpacePhone,
+ * número próprio) não pode herdar o gate — `WHATSAPP_TEST_ONLY_ORG_ID` o prende à
+ * org da Galega.
+ *
+ * Remover junto com as env vars quando o número próprio da Galega entrar (Fase 4).
  */
-function foraDoChatDeTeste(parsed: ChatIdentity, p: WahaPayload): boolean {
+function foraDoChatDeTeste(parsed: ChatIdentity, p: WahaPayload, organizationId: string): boolean {
   const numeroDeTeste = process.env.WHATSAPP_TEST_ONLY_PHONE;
   if (!numeroDeTeste) return false;
+  // Com WHATSAPP_TEST_ONLY_ORG_ID o gate vale só para a sessão dessa org: as
+  // outras orgs da instalação (número próprio) recebem tudo. Sem ela, vale
+  // para todas — o comportamento original.
+  const orgDoTeste = process.env.WHATSAPP_TEST_ONLY_ORG_ID;
+  if (orgDoTeste && organizationId !== orgDoTeste) return false;
   if (parsed.kind === "phone" && parsed.phone === numeroDeTeste) return false;
   if (telefoneAlternativoDe(p) === numeroDeTeste) return false;
   return true;
@@ -494,7 +503,7 @@ async function handleInbound(
   const parsed = parseChatId(chatId);
   if (parsed.kind === "group") return; // grupos não fazem binding CRM
 
-  if (foraDoChatDeTeste(parsed, p)) return;
+  if (foraDoChatDeTeste(parsed, p, session.organization_id)) return;
 
   if (!p.id) return;
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
@@ -677,7 +686,7 @@ async function handleOutboundFromUserPhone(
   const chatId = p.to ?? chatIdFromWaMessageId(p.id ?? "") ?? p.from ?? "";
   const parsed = parseChatId(chatId);
   if (parsed.kind === "group") return;
-  if (foraDoChatDeTeste(parsed, p)) return;
+  if (foraDoChatDeTeste(parsed, p, session.organization_id)) return;
   if (!p.id) return;
   if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
   // Idem inbound. Aqui o caso que mais dói é o chatId vazio: é literalmente o
