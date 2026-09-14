@@ -70,4 +70,7 @@ export const createFollowupEnrollmentSchema = z.strictObject({
   // ausente, resolve-se do próprio pointer (agentes que o armam). Validado
   // contra a org antes de gravar.
   agent_id: z.string().uuid().optional(),
+  // Botão "Follow-up" da conversa: tira o lead do atendimento humano (force_human +
+  // bot_silenced_until) para o fluxo conseguir enviar. Não mexe em quem está atribuído.
+  release_handoff: z.boolean().optional(),
 });

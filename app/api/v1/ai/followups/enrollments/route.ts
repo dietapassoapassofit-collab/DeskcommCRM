@@ -45,6 +45,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (status !== null && !ENROLLMENT_STATUSES.includes(status)) {
     return fail("invalid_request", "status inválido.", 400, { requestId });
   }
+  const contactId = req.nextUrl.searchParams.get("contact_id");
+  if (contactId !== null && !/^[0-9a-f-]{36}$/i.test(contactId)) {
+    return fail("invalid_request", "contact_id inválido.", 400, { requestId });
+  }
 
   const supabase = await createClient();
   let query = supabase
@@ -53,6 +57,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .eq("organization_id", activeOrg.orgId)
     .order("updated_at", { ascending: false });
   if (status !== null) query = query.eq("status", status);
+  if (contactId !== null) query = query.eq("contact_id", contactId);
 
   const { data, error } = await query;
   if (error) return fail("internal_error", error.message, 500, { requestId });
@@ -79,7 +84,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       details: parsed.error.flatten(),
     });
   }
-  const { pointer_id, contact_id, agent_id: agentIdInput } = parsed.data;
+  const { pointer_id, contact_id, agent_id: agentIdInput, release_handoff } = parsed.data;
 
   const supabase = await createClient();
 
@@ -165,6 +170,46 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("internal_error", insErr?.message ?? "followup_enrollment_insert_failed", 500, { requestId });
   }
 
+  // Libera DEPOIS de a inscrição existir: liberar antes e tomar o 409 acima deixaria
+  // o lead sem a trava e sem follow-up. Limpa exatamente o que `isLeadInHandoff`
+  // lê (force_human do contato + bot_silenced_until das conversas dele) e NÃO mexe
+  // em quem está atribuído — ao contrário do "Devolver ao automático".
+  if (release_handoff === true) {
+    const { error: contatoErr } = await supabase
+      .from("contacts")
+      .update({ force_human: false })
+      .eq("id", contact_id)
+      .eq("organization_id", activeOrg.orgId);
+    const { error: conversaErr } = contatoErr
+      ? { error: null }
+      : await supabase
+          .from("conversations")
+          .update({ bot_silenced_until: null })
+          .eq("contact_id", contact_id)
+          .eq("organization_id", activeOrg.orgId);
+    const erroLiberacao = contatoErr ?? conversaErr;
+    if (erroLiberacao) {
+      // Sem a liberação o fluxo só giraria no vazio (turno pulado por handoff):
+      // desfaz a inscrição em vez de deixar um follow-up que não envia.
+      await supabase
+        .from("followup_enrollments")
+        .update({
+          status: "cancelled",
+          cancel_reason: "falha ao liberar atendimento humano",
+          completed_at: new Date().toISOString(),
+          next_eval_at: null,
+        })
+        .eq("id", created.id)
+        .eq("organization_id", activeOrg.orgId);
+      return fail(
+        "internal_error",
+        `Não foi possível liberar o lead do atendimento humano: ${erroLiberacao.message}`,
+        500,
+        { requestId },
+      );
+    }
+  }
+
   void audit({
     action: "followup_enrollment.created",
     actorUserId: user.id,
@@ -172,7 +217,13 @@ export async function POST(req: NextRequest): Promise<Response> {
     resourceType: "followup_enrollment",
     resourceId: created.id,
     requestId,
-    metadata: { pointer_id, contact_id, version_id: pointer.active_version_id, agent_id: agentId },
+    metadata: {
+      pointer_id,
+      contact_id,
+      version_id: pointer.active_version_id,
+      agent_id: agentId,
+      release_handoff: release_handoff === true,
+    },
   });
 
   return ok(created, { requestId, status: 201 });

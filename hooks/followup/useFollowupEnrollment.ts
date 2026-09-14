@@ -105,3 +105,52 @@ export function useIntervirNoFollowup() {
     },
   });
 }
+
+
+/** Estados em que o lead ainda está andando no fluxo. */
+const ENROLLMENT_VIVO = ["active", "waiting_reply", "paused_handoff", "paused_manual"];
+
+export interface EnrollmentDoContato {
+  id: string;
+  pointer_id: string;
+  status: string;
+  next_eval_at: string | null;
+}
+
+export const followupDoContatoQueryKey = (contactId: string) => ["followup", "contato", contactId] as const;
+
+/** A inscrição viva deste contato (no máximo uma por lead), ou null. */
+export function useFollowupDoContato(contactId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: followupDoContatoQueryKey(contactId ?? ""),
+    enabled: enabled && !!contactId,
+    queryFn: async () => {
+      const res = await apiClient.get<{ data: EnrollmentDoContato[] }>(
+        `/api/v1/ai/followups/enrollments?contact_id=${contactId}`,
+      );
+      return res.data.find((e) => ENROLLMENT_VIVO.includes(e.status)) ?? null;
+    },
+  });
+}
+
+/** Botão "Follow-up" da conversa: inscreve e libera o lead do atendimento humano. */
+export function useColocarNoFollowup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: { pointer_id: string; contact_id: string }) => {
+      const res = await apiClient.post<{ data: EnrollmentDoContato }>("/api/v1/ai/followups/enrollments", {
+        ...args,
+        release_handoff: true,
+      });
+      return res.data;
+    },
+    onSuccess: (_data, args) => {
+      void qc.invalidateQueries({ queryKey: followupDoContatoQueryKey(args.contact_id) });
+      void qc.invalidateQueries({ queryKey: ["followup", "queue"] });
+      toast.success("Lead colocado no follow-up.");
+    },
+    onError: (err) => {
+      showApiError(err);
+    },
+  });
+}

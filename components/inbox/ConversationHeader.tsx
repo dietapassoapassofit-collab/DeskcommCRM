@@ -12,6 +12,7 @@ import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
 import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
 import { useResumeAiAttendance } from "@/hooks/inbox/useResumeAiAttendance";
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
+import { FollowupButton } from "@/components/inbox/FollowupButton";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -156,6 +157,9 @@ export function ConversationHeader({ conversation }: Props) {
             conversationId={conversation.id}
             snoozeUntil={conversation.snooze_until ?? null}
           />
+        )}
+        {status !== "closed" && status !== "archived" && (
+          <FollowupButton contactId={conversation.contact_id} />
         )}
         {status !== "closed" && status !== "archived" && (
           <Button
