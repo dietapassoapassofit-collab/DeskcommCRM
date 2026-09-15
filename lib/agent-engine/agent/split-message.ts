@@ -17,15 +17,26 @@
  * nenhum se comporta exatamente como antes.
  */
 export function splitIntoBubbles(text: string, maxChars: number): string[] {
+  return splitIntoPieces(text, maxChars).map((p) => p.texto);
+}
+
+/** Bolha + o parágrafo de onde ela saiu — é o que diz como religar bolhas vizinhas. */
+interface Pedaco {
+  texto: string;
+  paragrafo: number;
+}
+
+function splitIntoPieces(text: string, maxChars: number): Pedaco[] {
   const trimmed = (text ?? "").trim();
   if (trimmed === "") return [];
 
-  const bubbles: string[] = [];
-  for (const para of trimmed.split(/\n{2,}/)) {
-    const p = para.trim();
+  const bubbles: Pedaco[] = [];
+  const paragrafos = trimmed.split(/\n{2,}/);
+  for (let indice = 0; indice < paragrafos.length; indice++) {
+    const p = paragrafos[indice]!.trim();
     if (p === "") continue;
     if (p.length <= maxChars) {
-      bubbles.push(p);
+      bubbles.push({ texto: p, paragrafo: indice });
       continue;
     }
     // Parágrafo grande demais: fatia em sentenças e reagrupa até o teto. A
@@ -41,11 +52,11 @@ export function splitIntoBubbles(text: string, maxChars: number): string[] {
       if (joined.length <= maxChars) {
         cur = joined;
       } else {
-        if (cur !== "") bubbles.push(cur);
+        if (cur !== "") bubbles.push({ texto: cur, paragrafo: indice });
         cur = u;
       }
     }
-    if (cur !== "") bubbles.push(cur);
+    if (cur !== "") bubbles.push({ texto: cur, paragrafo: indice });
   }
   return bubbles;
 }
@@ -102,11 +113,21 @@ export interface SendInBubblesOpts<T extends BubbleOutcome = BubbleOutcome> {
  * Junta o excedente na última bolha permitida. Existe porque o teto por turno só era
  * checado ANTES da chamada de envio: um corpo de 10 parágrafos saía como 10 mensagens
  * em sequência (medido em produção, 15/09/2026).
+ *
+ * Religa pelo parágrafo de origem: pedaços do MESMO parágrafo voltam com espaço (são
+ * a mesma frase fatiada pelo teto de caracteres), parágrafos diferentes com linha em
+ * branco. Juntar tudo com "\n\n" abriu uma linha em branco no meio de uma frase
+ * ("voltar a ter essa" / "possibilidade") numa mensagem real, 15/09/2026.
  */
-export function capBubbles(bubbles: string[], maxBubbles: number | undefined): string[] {
-  if (maxBubbles === undefined || bubbles.length <= maxBubbles) return bubbles;
+function capBubbles(pedacos: Pedaco[], maxBubbles: number | undefined): string[] {
+  if (maxBubbles === undefined || pedacos.length <= maxBubbles) return pedacos.map((p) => p.texto);
   const teto = Math.max(1, Math.floor(maxBubbles));
-  return [...bubbles.slice(0, teto - 1), bubbles.slice(teto - 1).join("\n\n")];
+  const resto = pedacos.slice(teto - 1);
+  let ultima = resto[0]!.texto;
+  for (let i = 1; i < resto.length; i++) {
+    ultima += (resto[i]!.paragrafo === resto[i - 1]!.paragrafo ? " " : "\n\n") + resto[i]!.texto;
+  }
+  return [...pedacos.slice(0, teto - 1).map((p) => p.texto), ultima];
 }
 
 /**
@@ -126,7 +147,10 @@ export async function sendInBubbles<T extends BubbleOutcome>(
   body: string,
   opts: SendInBubblesOpts<T>,
 ): Promise<T> {
-  const bubbles = capBubbles(opts.enabled ? splitIntoBubbles(body, opts.maxChars) : [body], opts.maxBubbles);
+  const bubbles = capBubbles(
+    opts.enabled ? splitIntoPieces(body, opts.maxChars) : [{ texto: body, paragrafo: 0 }],
+    opts.maxBubbles,
+  );
   if (bubbles.length === 0) return opts.send(body); // corpo vazio: deixa o canal decidir
   let last: T | undefined;
   for (let i = 0; i < bubbles.length; i++) {
