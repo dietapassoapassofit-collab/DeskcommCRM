@@ -83,7 +83,7 @@ import { msAteAJanelaAbrir } from './janela-de-atendimento';
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { loadChannelKnobs } from '../pacing/store';
 import { resolveTurnAgent } from './resolve-turn-agent';
-import { enviarAudioDeBoasVindas } from './audio-de-boas-vindas';
+import { decidirPrimeiroContato, enviarAudioDeBoasVindas } from './audio-de-boas-vindas';
 import { carregarMateriais, GATES_DE_MATERIAL, prepararMaterial } from './material-da-empresa';
 import {
   hasOpenCaseForContact,
@@ -1296,6 +1296,23 @@ async function executarTurnoDoAgente(
   // Áudio de boas-vindas no primeiro contato — ANTES de ler o histórico, para o modelo
   // ver a transcrição como a nossa primeira mensagem (ver audio-de-boas-vindas.ts).
   if (agentConfig !== null && turnoVaiFalarComOLead(job)) {
+    // Quem não veio pelo anúncio (cliente antigo, conhecido) vai direto para a dona:
+    // sem áudio de apresentação e sem modelo. Handoff durável — decide uma vez só.
+    if ((await decidirPrimeiroContato(pool, { tenantId, leadId })) === 'fora_do_anuncio') {
+      await performHumanHandoff(
+        pool,
+        { tenantId, leadId, conversationId: input.conversationId },
+        {
+          reason: 'fora_do_anuncio',
+          conversationSummary:
+            'Contato não chegou pela mensagem do anúncio (pode ser cliente antigo ou conhecido). A IA não atendeu.',
+          inboxTitle: 'Contato fora do anúncio — atender pessoalmente',
+          log: runLog,
+        },
+      );
+      runLog.info('primeiro contato fora do anúncio — passado para humano sem IA', { kind: job.kind });
+      return;
+    }
     await enviarAudioDeBoasVindas(
       { db: pool, supabase: turnCrmCfg.supabase, channel, log: runLog },
       { tenantId, leadId, jobId: job.id, conversationId: input.conversationId },
@@ -1890,6 +1907,9 @@ async function executarTurnoDoAgente(
               sendInBubbles(finalBody, {
                 enabled: agentConfig?.splitMessages ?? false,
                 maxChars: agentConfig?.splitMaxChars ?? 600,
+                // O teto por turno também vale DENTRO desta chamada: sem isto, um corpo de
+                // 10 parágrafos saía como 10 mensagens (a checagem acima só olha o antes).
+                maxBubbles: Math.max(1, maxSendsPerTurn - seq),
                 sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
                 jitter: () => 1200 + Math.floor(Math.random() * 800), // piso no throttle anti-ban (1.2s) — bolhas são mensagens físicas
                 send: (bubble): Promise<ChannelSendResult> => {

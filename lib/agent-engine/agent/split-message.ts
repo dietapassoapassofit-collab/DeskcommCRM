@@ -90,6 +90,23 @@ export interface SendInBubblesOpts<T extends BubbleOutcome = BubbleOutcome> {
   sleep: (ms: number) => Promise<void>;
   /** ms de jitter humano entre bolhas (só entre, não antes da 1ª). */
   jitter: () => number;
+  /**
+   * Teto de bolhas DESTE envio (o que resta do teto de mensagens do turno). O que
+   * passar vai junto na última bolha, com as quebras de parágrafo preservadas.
+   * Ausente = sem teto.
+   */
+  maxBubbles?: number;
+}
+
+/**
+ * Junta o excedente na última bolha permitida. Existe porque o teto por turno só era
+ * checado ANTES da chamada de envio: um corpo de 10 parágrafos saía como 10 mensagens
+ * em sequência (medido em produção, 15/09/2026).
+ */
+export function capBubbles(bubbles: string[], maxBubbles: number | undefined): string[] {
+  if (maxBubbles === undefined || bubbles.length <= maxBubbles) return bubbles;
+  const teto = Math.max(1, Math.floor(maxBubbles));
+  return [...bubbles.slice(0, teto - 1), bubbles.slice(teto - 1).join("\n\n")];
 }
 
 /**
@@ -109,7 +126,7 @@ export async function sendInBubbles<T extends BubbleOutcome>(
   body: string,
   opts: SendInBubblesOpts<T>,
 ): Promise<T> {
-  const bubbles = opts.enabled ? splitIntoBubbles(body, opts.maxChars) : [body];
+  const bubbles = capBubbles(opts.enabled ? splitIntoBubbles(body, opts.maxChars) : [body], opts.maxBubbles);
   if (bubbles.length === 0) return opts.send(body); // corpo vazio: deixa o canal decidir
   let last: T | undefined;
   for (let i = 0; i < bubbles.length; i++) {

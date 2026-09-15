@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const sendMessageHandler = vi.hoisted(() => vi.fn());
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler }));
 
-const { enviarAudioDeBoasVindas, lerAudioDeBoasVindas, SEQ_DO_AUDIO } = await import(
+const { decidirPrimeiroContato, ehLeadDoAnuncio, enviarAudioDeBoasVindas, lerAudioDeBoasVindas, SEQ_DO_AUDIO } = await import(
   "@/lib/agent-engine/agent/audio-de-boas-vindas"
 );
 const { sendTurnMessage } = await import("@/lib/agent-engine/edge/crm/send-message");
@@ -79,6 +79,51 @@ describe("enviarAudioDeBoasVindas", () => {
 
   it("configuração incompleta (sem transcrição) conta como desligada", () => {
     expect(lerAudioDeBoasVindas({ boas_vindas: { audio_storage_path: "x.ogg", transcricao: " " } })).toBeNull();
+  });
+});
+
+describe("filtro de lead do anúncio", () => {
+  const FRASES = ["Como funciona o processo de limpar o nome?"];
+
+  it("reconhece o texto do anúncio mesmo com caixa, acento e pontuação diferentes", () => {
+    expect(ehLeadDoAnuncio("Como funciona o processo de limpar o nome?", FRASES)).toBe(true);
+    expect(ehLeadDoAnuncio("oi! como funciona o PROCESSO de limpar o nome", FRASES)).toBe(true);
+  });
+
+  it("mensagem de cliente antigo não é lead do anúncio", () => {
+    expect(ehLeadDoAnuncio("Como é que você tá, espero que esteja bem", FRASES)).toBe(false);
+    expect(ehLeadDoAnuncio(null, FRASES)).toBe(false);
+    expect(ehLeadDoAnuncio("", FRASES)).toBe(false);
+  });
+
+  function db(row: { settings: unknown; ia_ja_atendeu: boolean; primeira: string | null }) {
+    return { query: vi.fn(async () => ({ rows: [row] })) } as never;
+  }
+  const ids = { tenantId: "org-1", leadId: "lead-1" };
+  const SETTINGS = { boas_vindas: { frases_do_anuncio: FRASES } };
+
+  it("primeira mensagem diferente do anúncio → fora_do_anuncio", async () => {
+    expect(await decidirPrimeiroContato(db({ settings: SETTINGS, ia_ja_atendeu: false, primeira: "Boa tarde, minha amiga" }), ids)).toBe(
+      "fora_do_anuncio",
+    );
+  });
+
+  it("primeira mensagem é o anúncio → lead_do_anuncio", async () => {
+    expect(
+      await decidirPrimeiroContato(db({ settings: SETTINGS, ia_ja_atendeu: false, primeira: "Como funciona o processo de limpar o nome?" }), ids),
+    ).toBe("lead_do_anuncio");
+  });
+
+  it("IA já atendeu o contato → não decide de novo", async () => {
+    expect(await decidirPrimeiroContato(db({ settings: SETTINGS, ia_ja_atendeu: true, primeira: "qualquer coisa" }), ids)).toBe(
+      "nao_se_aplica",
+    );
+  });
+
+  it("organização sem frases configuradas → filtro desligado", async () => {
+    expect(await decidirPrimeiroContato(db({ settings: { llm: {} }, ia_ja_atendeu: false, primeira: "oi" }), ids)).toBe(
+      "nao_se_aplica",
+    );
   });
 });
 

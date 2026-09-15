@@ -61,6 +61,68 @@ export function lerAudioDeBoasVindas(settings: unknown): AudioDeBoasVindas | nul
   };
 }
 
+/**
+ * Quem a IA atende: quando a organização configura `boas_vindas.frases_do_anuncio`,
+ * só o contato cuja PRIMEIRA mensagem traz o texto do anúncio é lead para a IA.
+ *
+ * ⚠️ POR QUE EXISTE: o número conectado costuma ser o WhatsApp de uso diário da dona.
+ * O CRM não enxerga as conversas anteriores à conexão, então cliente em andamento
+ * chegava como "contato novo" e recebia apresentação de desconhecido e qualificação
+ * da IA (medido 15/09/2026: cliente que já estava em processo).
+ */
+function normalizar(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+export function lerFrasesDoAnuncio(settings: unknown): string[] {
+  const f = (settings as { boas_vindas?: { frases_do_anuncio?: unknown } } | null)?.boas_vindas?.frases_do_anuncio;
+  return Array.isArray(f) ? f.filter((x): x is string => typeof x === 'string' && normalizar(x) !== '') : [];
+}
+
+export function ehLeadDoAnuncio(primeiraMensagem: string | null, frases: string[]): boolean {
+  const texto = normalizar(primeiraMensagem ?? '');
+  return texto !== '' && frases.some((frase) => texto.includes(normalizar(frase)));
+}
+
+export type PrimeiroContato = 'nao_se_aplica' | 'lead_do_anuncio' | 'fora_do_anuncio';
+
+/**
+ * Decide UMA vez por contato, enquanto a IA ainda não mandou nada para ele. Mensagem
+ * que a dona mandou do próprio celular não conta como "a IA já atendeu" — por isso o
+ * filtro é `sent_via = 'ai'`, não qualquer outbound.
+ */
+export async function decidirPrimeiroContato(
+  db: Queryable,
+  ids: { tenantId: string; leadId: string },
+): Promise<PrimeiroContato> {
+  const { rows } = await db.query<{ settings: unknown; ia_ja_atendeu: boolean; primeira: string | null }>(
+    `select o.settings,
+            exists (
+              select 1 from messages m
+              where m.organization_id = o.id and m.contact_id = $2
+                and m.direction = 'outbound' and m.sent_via = 'ai'
+            ) as ia_ja_atendeu,
+            (
+              select m.body from messages m
+              where m.organization_id = o.id and m.contact_id = $2 and m.direction = 'inbound'
+              order by m.sent_at asc, m.id asc
+              limit 1
+            ) as primeira
+       from organizations o
+      where o.id = $1`,
+    [ids.tenantId, ids.leadId],
+  );
+  const row = rows[0];
+  const frases = lerFrasesDoAnuncio(row?.settings);
+  if (!row || frases.length === 0 || row.ia_ja_atendeu) return 'nao_se_aplica';
+  return ehLeadDoAnuncio(row.primeira, frases) ? 'lead_do_anuncio' : 'fora_do_anuncio';
+}
+
 export async function enviarAudioDeBoasVindas(
   deps: { db: Queryable; supabase: SupabaseClient; channel: ChannelAdapter; log: Logger },
   ids: { tenantId: string; leadId: string; jobId: string; conversationId: string },

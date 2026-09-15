@@ -123,8 +123,13 @@ const ESPERA_DERIVACAO_MS = 4_000;
  * Teto da espera. Passado isto o turno segue SEM o texto derivado: melhor uma
  * resposta tarde e sem transcrição do que cliente esperando para sempre porque
  * a derivação travou.
+ *
+ * 150 s, não 45: a derivação roda pelo cron `event-log-drain` (1/min) e um áudio
+ * de ~1 min levou 2 min para ficar pronto nesta VPS (15/09/2026). Com 45 s o turno
+ * seguia sem o texto e o agente respondia "não consegui ouvir seu áudio" a uma
+ * cliente que tinha contado o caso inteiro. Adiar não gasta tentativa (ver acima).
  */
-const TETO_ESPERA_DERIVACAO_MS = 45_000;
+const TETO_ESPERA_DERIVACAO_MS = 150_000;
 
 type DesfechoEvento = 'processado' | 'adiar';
 
