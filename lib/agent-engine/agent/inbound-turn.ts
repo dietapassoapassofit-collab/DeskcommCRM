@@ -83,6 +83,8 @@ import { msAteAJanelaAbrir } from './janela-de-atendimento';
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { loadChannelKnobs } from '../pacing/store';
 import { resolveTurnAgent } from './resolve-turn-agent';
+import { enviarAudioDeBoasVindas } from './audio-de-boas-vindas';
+import { carregarMateriais, GATES_DE_MATERIAL, prepararMaterial } from './material-da-empresa';
 import {
   hasOpenCaseForContact,
   getCaseAwaitingLead,
@@ -277,6 +279,15 @@ export const AGENT_TOOL_DEFS = {
       values: z
         .record(z.string(), z.string())
         .describe('valor de cada parâmetro, na chave que a tela de templates mostra (ex.: "1", "2")'),
+    }).passthrough(),
+  },
+  enviar_material: {
+    description:
+      'Envia um MATERIAL PRONTO da empresa (fotos, áudios gravados) configurado para esta organização. ' +
+      'Use SOMENTE quando as instruções mandarem enviar aquele material, pelo id que elas indicam. ' +
+      'Cada material sai uma vez por contato. Depois de enviar, não escreva mais nada neste turno.',
+    inputSchema: z.object({
+      material_id: z.string().min(1).describe('id do material, exatamente como as instruções indicam'),
     }).passthrough(),
   },
 } as const;
@@ -1271,6 +1282,26 @@ async function executarTurnoDoAgente(
       : systemWithMemory;
   const previous = await latestCheckpoint(pool, tenantId, leadId);
   const leadState = await getLeadState(pool, tenantId, leadId);
+
+  // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
+  // default WAHA-via-CRM envolve o sink F2-06. Instanciado por job (o pool é
+  // per-job neste codebase); trocar o adapter não muda nada abaixo.
+  // Fase 2B: o envio carrega o ai_agents.id REAL como ator (audit/metadata do
+  // CRM apontam o agente publicado, não um id genérico).
+  // Criado ANTES do contexto de abertura: o áudio de boas-vindas usa o mesmo canal.
+  const turnCrmCfg =
+    agentConfig !== null ? { ...deps.crmCfg, agentActorId: agentConfig.agentId } : deps.crmCfg;
+  const channel = (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, turnCrmCfg)))(pool);
+
+  // Áudio de boas-vindas no primeiro contato — ANTES de ler o histórico, para o modelo
+  // ver a transcrição como a nossa primeira mensagem (ver audio-de-boas-vindas.ts).
+  if (agentConfig !== null && turnoVaiFalarComOLead(job)) {
+    await enviarAudioDeBoasVindas(
+      { db: pool, supabase: turnCrmCfg.supabase, channel, log: runLog },
+      { tenantId, leadId, jobId: job.id, conversationId: input.conversationId },
+    );
+  }
+
   const openingContext = await getLeadContext(
     pool,
     deps.crmCfg,
@@ -1400,14 +1431,6 @@ async function executarTurnoDoAgente(
     });
   }
 
-  // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
-  // default WAHA-via-CRM envolve o sink F2-06. Instanciado por job (o pool é
-  // per-job neste codebase); trocar o adapter não muda nada abaixo.
-  // Fase 2B: o envio carrega o ai_agents.id REAL como ator (audit/metadata do
-  // CRM apontam o agente publicado, não um id genérico).
-  const turnCrmCfg =
-    agentConfig !== null ? { ...deps.crmCfg, agentActorId: agentConfig.agentId } : deps.crmCfg;
-  const channel = (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, turnCrmCfg)))(pool);
   const clock = deps.clock ?? ((): Date => new Date());
   // STOP lido no turno (fonte: CRM via get_lead_context) — combinado com o cache
   // durável leads.is_opted_out no gate 1 da cadeia (F2-13).
@@ -1691,6 +1714,77 @@ async function executarTurnoDoAgente(
           };
         }
         return { ok: true, status: 'aceita_aguardando_canal' };
+      },
+    }),
+    enviar_material: tool({
+      ...AGENT_TOOL_DEFS.enviar_material,
+      execute: async ({ material_id }) => {
+        if (seq >= maxSendsPerTurn) {
+          return {
+            ok: false,
+            error: {
+              code: 'max_sends_per_turn',
+              message:
+                `você já enviou ${seq} mensagens neste turno (teto: ${maxSendsPerTurn}). ` +
+                'NÃO envie mais nada agora — encerre o turno e espere a resposta do lead.',
+            },
+          };
+        }
+        const preparado = await prepararMaterial(
+          { db: pool, supabase: turnCrmCfg.supabase },
+          { tenantId, leadId, conversationId: input.conversationId, materialId: material_id },
+        );
+        if (!preparado.ok) return preparado;
+
+        // ponytail: o teto por turno só é checado na entrada — o material sai inteiro
+        // (fatiar um antes/depois é pior que passar do teto). Ele é fixo e configurado
+        // pela empresa, não uma lista que o modelo inventou.
+        for (const [i, envio] of preparado.envios.entries()) {
+          const chain = await runBeforeSend({
+            pool,
+            log: runLog,
+            tenantId,
+            leadId,
+            jobId: job.id,
+            channelSessionId: input.channelSessionId,
+            // Rótulo, não conteúdo: os gates deste envio não leem texto (ver GATES_DE_MATERIAL).
+            body: `material ${material_id} (${i + 1}/${preparado.envios.length})`,
+            gates: GATES_DE_MATERIAL,
+            optedOutThisTurn,
+            crmDailyLimit: null,
+            now: clock(),
+            sleep: deps.sleep,
+            lgpd,
+            send: () => {
+              seq += 1;
+              return channel.send({
+                tenantId,
+                leadId,
+                jobId: job.id,
+                seq,
+                conversationId: input.conversationId,
+                body: envio.body,
+                media: envio.media,
+              });
+            },
+          });
+          if (chain.status === 'vetoed') {
+            return { ok: false, error: { code: chain.code, message: chain.message } };
+          }
+          outcomes.push(chain.outcome);
+          if (chain.outcome.kind !== 'sent' && chain.outcome.kind !== 'already_sent') {
+            return {
+              ok: true,
+              status: 'aceita_aguardando_canal',
+              message: 'o material ficou na fila do canal. Não escreva mais nada neste turno.',
+            };
+          }
+        }
+        return {
+          ok: true,
+          status: 'enviado',
+          message: 'material enviado. Não escreva mais nada neste turno — espere a resposta do lead.',
+        };
       },
     }),
     search_knowledge: tool({
@@ -2261,6 +2355,12 @@ async function executarTurnoDoAgente(
     if (!capabilitiesOf(provider).requiresTemplates) {
       delete rawTools.send_template;
     }
+  }
+
+  // Material pronto só existe para quem configurou `settings.materiais` — sem material, a
+  // ferramenta fica fora do prompt (mesma razão da de template acima).
+  if (Object.keys(await carregarMateriais(pool, tenantId)).length === 0) {
+    delete rawTools.enviar_material;
   }
 
   // 2B-tools: tools do catálogo MCP habilitadas NA TELA entram no run (audit +

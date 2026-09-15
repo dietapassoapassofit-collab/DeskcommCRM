@@ -36,6 +36,17 @@ export interface ChannelSendInput {
     /** Valor por slot, chaveado por `slotKey` — a mesma chave da tela. */
     values: Record<string, string>;
   };
+  /**
+   * Presente = este envio é uma MÍDIA já guardada no storage da conversa (áudio de
+   * boas-vindas, material pronto da empresa). Em áudio o `body` é a transcrição — o que
+   * o histórico do modelo lê no lugar do som; em imagem vai vazio, porque viraria legenda.
+   */
+  media?: {
+    kind: 'audio' | 'image';
+    /** caminho no bucket, dentro de `<org>/<conversa>/` (o sink recusa fora disso) */
+    storagePath: string;
+    mime: string;
+  };
 }
 
 /**

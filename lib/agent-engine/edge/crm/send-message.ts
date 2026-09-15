@@ -77,6 +77,11 @@ export interface SendMessageInput {
    * colidirem no ledger e o segundo virar `already_sent` sem ter saído.
    */
   template?: { name: string; language: string; values: Record<string, string> };
+  /**
+   * Presente = envio de MÍDIA do storage (ver `ChannelSendInput.media`). O caminho
+   * entra no hash: o mesmo `body` com outro arquivo é outra intenção.
+   */
+  media?: { kind: 'audio' | 'image'; storagePath: string; mime: string };
 }
 
 /** Fallback do ator ai_agent quando não há agente publicado (cfg.agentActorId). */
@@ -92,7 +97,8 @@ export async function sendTurnMessage(
   cfg: CrmEdgeConfig,
   input: SendMessageInput,
 ): Promise<SendOutcome> {
-  const bodyHash = createHash('sha256').update(input.body).digest('hex');
+  // `update('')` não altera o digest: texto e template mantêm o hash de antes.
+  const bodyHash = createHash('sha256').update(input.body).update(input.media?.storagePath ?? '').digest('hex');
   const ledger = await claimLedgerRow(db, input, bodyHash);
   if (ledger.shortCircuit) {
     return ledger.shortCircuit;
@@ -132,7 +138,13 @@ export async function sendTurnMessage(
               template_language: input.template.language,
               template_values: input.template.values,
             }
-          : { type: 'text' as const }),
+          : input.media
+            ? {
+                type: input.media.kind,
+                media_storage_path: input.media.storagePath,
+                media_mime: input.media.mime,
+              }
+            : { type: 'text' as const }),
         body: input.body,
         metadata: { idempotency_key: idempotencyKey },
       },
