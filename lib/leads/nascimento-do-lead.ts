@@ -145,7 +145,7 @@ export async function garantirLeadDaConversa(
   // lugar onde ninguém olharia.
   const { data: contato } = await db
     .from("contacts")
-    .select("is_blocked,display_name,name,phone_number,source,source_metadata")
+    .select("is_blocked,display_name,name,phone_number,source,source_metadata,wa_identity")
     .eq("organization_id", organizationId)
     .eq("id", contactId)
     .maybeSingle();
@@ -185,6 +185,7 @@ export async function garantirLeadDaConversa(
   //
   // O payload entra só como reforço: o upsert do contato roda ANTES deste ponto,
   // então o cadastro já incorporou o `pushName` desta mensagem.
+  const rede = redeDoContato(contato);
   const doCadastro = rotuloDoContato(contato);
   const doPayload = (dados.nomeDoContato ?? "").trim();
   const titulo =
@@ -194,7 +195,7 @@ export async function garantirLeadDaConversa(
         ? doPayload
         : // "Sem nome" serve para uma linha de lista; um card de kanban precisa
           // dizer de onde veio, senão o quadro vira uma coluna de anônimos iguais.
-          "Novo contato pelo WhatsApp";
+          `Novo contato pelo ${rede}`;
 
   // De onde veio: o contato já carrega a atribuição de anúncio (gravada no
   // primeiro toque, por `fn_estampar_atribuicao_de_anuncio` — ver
@@ -212,12 +213,13 @@ export async function garantirLeadDaConversa(
       stage_id: destino.stageId,
       contact_id: contactId,
       title: titulo,
-      source: rotuloDeAnuncio ? contato!.source : "whatsapp",
+      source: rotuloDeAnuncio ? contato!.source : rede.toLowerCase(),
       source_metadata: rotuloDeAnuncio ? (contato!.source_metadata ?? {}) : {},
       // O ponto ao lado do título só acende se a organização cadastrar este
       // rótulo em `crm_pipelines.settings.canonical_tags` (Configurações do
       // funil) — a tag sempre entra; o destaque visual é opt-in do operador.
-      tags: rotuloDeAnuncio ? [rotuloDeAnuncio] : [],
+      // Instagram também vira tag: o vendedor filtra o funil pela origem.
+      tags: [...(rotuloDeAnuncio ? [rotuloDeAnuncio] : []), ...(rede === "Instagram" ? ["Instagram"] : [])],
     })
     .select("id")
     .single();
@@ -250,7 +252,7 @@ export async function garantirLeadDaConversa(
     // traduz esta variante para `kind: "system"` na timeline, e ela descreve o
     // que de fato aconteceu — a mensagem chegou por webhook, o produto agiu.
     actor: { type: "webhook_source", id: "canal-inbound" },
-    reason: "primeira mensagem recebida no WhatsApp",
+    reason: `primeira mensagem recebida no ${rede}`,
     payload: { conversation_id: conversationId },
   });
   if (!registro.ok) {
@@ -269,4 +271,16 @@ export async function garantirLeadDaConversa(
     pipelineId: destino.pipelineId,
     stageId: destino.stageId,
   };
+}
+
+/**
+ * Por qual rede o contato chegou, para o card dizer de onde veio.
+ *
+ * O contato do Instagram entra com a identidade `lid:ig.<id>` (definida na
+ * leitura do webhook do canal).
+ */
+export function redeDoContato(
+  contato: { wa_identity?: string | null } | null | undefined,
+): "Instagram" | "WhatsApp" {
+  return contato?.wa_identity?.startsWith("lid:ig.") ? "Instagram" : "WhatsApp";
 }
