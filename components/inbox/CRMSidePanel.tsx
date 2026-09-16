@@ -17,6 +17,7 @@ import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { NewLeadDialog } from "@/components/kanban/NewLeadDialog";
+import { EtapaDoLead } from "./EtapaDoLead";
 import { cn } from "@/lib/utils";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 
@@ -31,6 +32,8 @@ interface LeadRow {
   value_cents: number | null;
   currency: string | null;
   updated_at: string;
+  pipeline_id: string | null;
+  stage_id: string | null;
 }
 
 interface OrderRow {
@@ -473,7 +476,7 @@ export function CRMSidePanel({ conversation }: Props) {
             {leads.map((l) => (
               <li
                 key={l.id}
-                className="flex items-center justify-between rounded-md border border-border p-2 text-xs"
+                className="flex items-center justify-between gap-2 rounded-md border border-border p-2 text-xs"
               >
                 <div className="min-w-0">
                   <div className="truncate font-medium">{l.title}</div>
@@ -481,6 +484,13 @@ export function CRMSidePanel({ conversation }: Props) {
                     {l.status} · {formatMoney(l.value_cents, l.currency)}
                   </div>
                 </div>
+                <EtapaDoLead
+                  leadId={l.id}
+                  pipelineId={l.pipeline_id}
+                  stageId={l.stage_id}
+                  updatedAt={l.updated_at}
+                  aoMover={() => setTentativa((n) => n + 1)}
+                />
               </li>
             ))}
           </ul>

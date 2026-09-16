@@ -1,4 +1,7 @@
 /**
+ * GET  /api/v1/pipelines/[id]/stages — as colunas vivas do funil, na ordem.
+ *   Papel `agent`: quem atende precisa saber em que etapa o cliente está para
+ *   marcá-la pelo painel do Inbox — ler o funil não é configurá-lo.
  * POST /api/v1/pipelines/[id]/stages — cria uma etapa no fim do funil.
  *
  * Até a tela de etapas existir, NENHUMA superfície criava etapa: o gatilho
@@ -23,7 +26,7 @@ import { z } from "zod";
 import { respostaDeRecusa } from "@/lib/api/recusa";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { criarEtapa } from "@/lib/leads/stage-operations";
+import { corpo, criarEtapa, lerFunil } from "@/lib/leads/stage-operations";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +38,26 @@ interface RouteCtx {
 // `.max(80)`: o nome é o topo de uma coluna do quadro, não um parágrafo. O banco
 // não limita, mas a tela quebra muito antes disso.
 const bodySchema = z.object({ name: z.string().min(1).max(80) }).strict();
+
+export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const requestId = randomUUID();
+  const authz = await requireRole("agent", { requestId, resource: "crm_stages" });
+  if (!authz.ok) return authz.response;
+  const { org } = authz;
+
+  const { id: pipelineId } = await ctx.params;
+  const supabase = await createClient();
+  let etapas;
+  try {
+    etapas = await lerFunil(supabase, org.orgId, pipelineId);
+  } catch (err) {
+    return fail("internal_error", err instanceof Error ? err.message : "erro ao ler o funil", 500, {
+      requestId,
+    });
+  }
+  if (etapas === null) return fail("not_found", "Funil não encontrado.", 404, { requestId });
+  return ok(corpo(etapas), { requestId });
+}
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();

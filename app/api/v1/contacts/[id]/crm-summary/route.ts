@@ -34,7 +34,9 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-const LEAD_COLS = "id, title, status, value_cents, currency, updated_at";
+// `pipeline_id`/`stage_id`: o painel do Inbox mostra em que etapa o cliente está
+// e deixa marcar outra. Sem eles a tela saberia o negócio e não o lugar dele.
+const LEAD_COLS = "id, title, status, value_cents, currency, updated_at, pipeline_id, stage_id";
 const ORDER_COLS = "id, external_id, status, total_cents, currency, created_at";
 /** Acompanha o que a timeline mostra — `reason` e `actor_kind` inclusive. */
 const ACTIVITY_COLS = "id, type, source_module, performed_at, payload, reason, actor_kind";
