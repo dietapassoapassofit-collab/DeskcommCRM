@@ -10,7 +10,7 @@ import type { AtribuicaoDeAnuncio, Bruto } from "@/lib/leads/atribuicao-de-anunc
 import { obj, str } from "@/lib/leads/atribuicao-de-anuncio";
 
 /**
- * `contextInfo.externalAdReplyInfo` do Baileys — o mesmo dado do anúncio,
+ * `contextInfo.externalAdReply` do Baileys — o mesmo dado do anúncio,
  * embutido na PRÓPRIA mensagem que o app do cliente manda ao clicar num
  * anúncio "Clique para o WhatsApp". `messageRaw` é `_data.message` do payload
  * do WAHA (NOWEB) — a forma bruta do Baileys, sem normalização.
@@ -20,6 +20,11 @@ import { obj, str } from "@/lib/leads/atribuicao-de-anuncio";
  * primeiro na lista de candidatos), então a busca varre os tipos comuns em
  * vez de assumir um só.
  */
+function semMiniatura(ad: Bruto): Bruto {
+  const { thumbnail: _thumbnail, ...resto } = ad;
+  return resto;
+}
+
 export function extrairAtribuicaoWaha(messageRaw: unknown): AtribuicaoDeAnuncio | null {
   const m = obj(messageRaw);
   if (!m) return null;
@@ -31,7 +36,12 @@ export function extrairAtribuicaoWaha(messageRaw: unknown): AtribuicaoDeAnuncio 
     obj(m.conversation) ? null : m.contextInfo,
   ];
   const contextInfo = candidatos.map(obj).find((c): c is Bruto => c !== null);
-  const ad = obj(contextInfo?.externalAdReplyInfo);
+  // `externalAdReply` é o CAMPO; `ExternalAdReplyInfo` é só o nome do TIPO no
+  // WAProto (medido no WAHA desta VPS, baileys 7.0.0-rc14: ContextInfo declara
+  // `externalAdReply?: IExternalAdReplyInfo`, e é ali que vem o `ctwaClid`).
+  // Ler `externalAdReplyInfo` não achava nada: 22 cliques reais de anúncio da
+  // SpacePhone chegaram em 09/2026 e nenhum foi atribuído.
+  const ad = obj(contextInfo?.externalAdReply);
   if (!ad) return null;
 
   // O mesmo filtro que o irmão da API oficial aplica, e que aqui faltava: post
@@ -52,6 +62,9 @@ export function extrairAtribuicaoWaha(messageRaw: unknown): AtribuicaoDeAnuncio 
     titulo,
     corpo: str(ad.body),
     sourceUrl,
-    bruto: ad,
+    // Sem a miniatura: é imagem em bytes, e iria parar no jsonb de TODO contato
+    // vindo de anúncio. O resto do objeto cru fica — inclusive `sourceId`
+    // (id do anúncio), que `sourceId` acima troca pelo `ctwaClid` quando há os dois.
+    bruto: semMiniatura(ad),
   };
 }

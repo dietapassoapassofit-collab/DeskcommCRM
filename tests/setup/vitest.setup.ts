@@ -34,6 +34,10 @@ for (const envFile of [".env", ".env.local"]) {
  * teste e limpa depois — que é como um knob deve entrar numa suíte.
  */
 delete process.env.WHATSAPP_TEST_ONLY_PHONE;
+// Par do knob acima (prende o filtro a uma organização): com ele vindo do `.env`,
+// o primeiro teste do filtro rodava com o gate preso a outra org e deixava passar
+// a mensagem que devia descartar.
+delete process.env.WHATSAPP_TEST_ONLY_ORG_ID;
 
 /**
  * Placeholders para as vars que `lib/env.ts` exige na IMPORTAÇÃO.

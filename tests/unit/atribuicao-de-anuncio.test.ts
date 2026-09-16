@@ -55,13 +55,13 @@ describe("extrairAtribuicaoMeta — referral do webhook oficial", () => {
   });
 });
 
-describe("extrairAtribuicaoWaha — externalAdReplyInfo do Baileys", () => {
-  it("extrai de extendedTextMessage.contextInfo.externalAdReplyInfo", () => {
+describe("extrairAtribuicaoWaha — contextInfo.externalAdReply do Baileys", () => {
+  it("extrai de extendedTextMessage.contextInfo.externalAdReply", () => {
     const r = extrairAtribuicaoWaha({
       extendedTextMessage: {
         text: "Olá, vim do anúncio",
         contextInfo: {
-          externalAdReplyInfo: {
+          externalAdReply: {
             title: "Agende sua consulta",
             body: "Clique e fale com a gente",
             sourceId: "ad-999",
@@ -84,7 +84,7 @@ describe("extrairAtribuicaoWaha — externalAdReplyInfo do Baileys", () => {
   it("também procura em imageMessage/videoMessage.contextInfo", () => {
     const r = extrairAtribuicaoWaha({
       imageMessage: {
-        contextInfo: { externalAdReplyInfo: { sourceId: "ad-1", title: "X" } },
+        contextInfo: { externalAdReply: { sourceId: "ad-1", title: "X" } },
       },
     });
     expect(r?.sourceId).toBe("ad-1");
@@ -107,7 +107,7 @@ describe("extrairAtribuicaoWaha — externalAdReplyInfo do Baileys", () => {
         extendedTextMessage: {
           text: "oi",
           contextInfo: {
-            externalAdReplyInfo: { sourceType: "post", title: "Promo", ctwaClid: "x" },
+            externalAdReply: { sourceType: "post", title: "Promo", ctwaClid: "x" },
           },
         },
       }),
@@ -118,7 +118,7 @@ describe("extrairAtribuicaoWaha — externalAdReplyInfo do Baileys", () => {
         extendedTextMessage: {
           text: "oi",
           contextInfo: {
-            externalAdReplyInfo: { sourceType: "ad", title: "Promo", ctwaClid: "x" },
+            externalAdReply: { sourceType: "ad", title: "Promo", ctwaClid: "x" },
           },
         },
       }),
@@ -177,5 +177,39 @@ describe("estamparAtribuicaoDoContato", () => {
         bruto: {},
       }),
     ).resolves.toBeUndefined();
+  });
+});
+
+
+describe("extrairAtribuicaoWaha — o campo real do WAProto", () => {
+  it("ignora `externalAdReplyInfo`: é o nome do TIPO, nunca vem na mensagem", () => {
+    expect(
+      extrairAtribuicaoWaha({
+        extendedTextMessage: {
+          text: "vi o anúncio",
+          contextInfo: { externalAdReplyInfo: { sourceType: "ad", ctwaClid: "x", title: "T" } },
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("não grava a miniatura em bytes, mas guarda o id do anúncio no objeto cru", () => {
+    const r = extrairAtribuicaoWaha({
+      extendedTextMessage: {
+        text: "vi o anuncio da jbl e quero saber mais",
+        contextInfo: {
+          externalAdReply: {
+            sourceType: "ad",
+            sourceId: "120246377250420250",
+            ctwaClid: "clid-real",
+            title: "JBL",
+            thumbnail: "AAAA",
+          },
+        },
+      },
+    });
+    expect(r?.sourceId).toBe("clid-real");
+    expect(r?.bruto).not.toHaveProperty("thumbnail");
+    expect(r?.bruto).toMatchObject({ sourceId: "120246377250420250", ctwaClid: "clid-real" });
   });
 });
