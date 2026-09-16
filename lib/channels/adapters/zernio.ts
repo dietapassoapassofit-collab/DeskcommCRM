@@ -201,6 +201,12 @@ export const zernioAdapter: ChannelAdapter = {
       // `wamid`. É o `external_id` da linha citada, nunca o `id` da nossa
       // tabela: o provider nunca viu o nosso. Só entra quando existe.
       ...(envelope.replyToExternalId ? { replyTo: envelope.replyToExternalId } : {}),
+      // Instagram: resposta de atendente humano vai com a etiqueta HUMAN_AGENT,
+      // que a Meta aceita por 7 dias depois da última mensagem do cliente (sem
+      // ela, só 24h). Depois dos 7 dias o envio volta `failed` com o motivo.
+      ...(creds.plataforma === "instagram"
+        ? { messagingType: "MESSAGE_TAG", messageTag: "HUMAN_AGENT" }
+        : {}),
     };
 
     const res = await fetch(url, {
@@ -337,7 +343,11 @@ export const zernioAdapter: ChannelAdapter = {
     assertSafeOutboundUrl(input.url);
     await assertDestinoResolvidoSeguro(new URL(input.url).hostname);
 
-    const res = await fetch(input.url, zernioMediaFetchInit(creds.apiKey));
+    // A chave só vai para o próprio provedor. No Instagram a URL é o CDN da
+    // Meta (lookaside.fbsbx.com), já assinada — mandar o Bearer para lá seria
+    // entregar a chave do tenant a um terceiro.
+    const doProvedor = new URL(input.url).host === new URL(creds.baseUrl).host;
+    const res = await fetch(input.url, doProvedor ? zernioMediaFetchInit(creds.apiKey) : {});
     if (!res.ok) {
       // 400 costuma ser mídia já descartada pela plataforma, e 401 credencial —
       // desfechos diferentes, e o status no erro é o que distingue os dois para

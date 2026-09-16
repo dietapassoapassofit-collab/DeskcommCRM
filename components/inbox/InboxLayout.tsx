@@ -231,6 +231,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
     selectedConversation?.channel_sessions?.provider ?? null,
     selectedConversation?.last_inbound_at ?? null,
     agoraJanela,
+    selectedConversation?.channel_sessions?.plataforma ?? null,
   );
   const motivoDaJanela =
     janela.tipo === "fechada"

@@ -52,7 +52,7 @@ describe("leitura do evento (Zernio)", () => {
     expect(
       parseZernioEdicao({
         event: "message.edited",
-        message: { platform: "instagram", platformMessageId: "x" },
+        message: { platform: "telegram", platformMessageId: "x" },
       }),
     ).toBeNull();
   });
@@ -194,5 +194,16 @@ describe("os elos que somem sem barulho", () => {
     expect(fonte).toMatch(/revoked_at/);
     expect(fonte).toMatch(/Esta mensagem foi apagada/);
     expect(fonte).toMatch(/editada/);
+  });
+});
+
+describe("edição no Instagram Direct", () => {
+  it("é aplicada como a do WhatsApp", () => {
+    expect(
+      parseZernioEdicao({
+        event: "message.edited",
+        message: { platform: "instagram", platformMessageId: "aWdf_1", text: "novo" },
+      }),
+    ).toEqual({ externalId: "aWdf_1", tipo: "edited", body: "novo" });
   });
 });

@@ -153,6 +153,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     webhookSecretEncrypted: segredoCifrado,
     phoneNumber: v.phoneNumber ? `+${v.phoneNumber.replace(/\D/g, "")}` : null,
     displayName: v.displayName ?? PARTNER_CHANNEL_LABEL,
+    plataforma: v.plataforma,
   });
   if (error) return fail("internal_error", error, 500, { requestId });
 

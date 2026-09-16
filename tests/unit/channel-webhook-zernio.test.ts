@@ -177,8 +177,8 @@ describe("parse — o que RECUSA", () => {
   const recusa = (p: unknown) => expect(parseZernioInbound(p)).toBeNull();
 
   it("evento que não é de mensagem nem de desfecho", () => recusa(payload({ event: "post.published" })));
-  it("outra plataforma — DM de outra rede não é conversa de WhatsApp", () =>
-    recusa(payload({}, { platform: "instagram" })));
+  it("rede não atendida — DM de outra rede não vira conversa", () =>
+    recusa(payload({}, { platform: "telegram" })));
   it("sem conversationId — sem thread não há o que endereçar depois", () =>
     recusa(payload({}, { conversationId: null })));
   it("sem nenhum id de mensagem — não há chave de idempotência", () =>
@@ -225,5 +225,52 @@ describe("mídia", () => {
   it("a url do anexo é endpoint AUTENTICADO — sem Bearer devolve 401", () => {
     const init = zernioMediaFetchInit("sk_x") as { headers: Record<string, string> };
     expect(init.headers.Authorization).toBe("Bearer sk_x");
+  });
+});
+
+describe("parse — Instagram Direct", () => {
+  const ig = (msg: Record<string, unknown> = {}, over: Record<string, unknown> = {}) =>
+    payload(over, {
+      platform: "instagram",
+      platformMessageId: "aWdf_1",
+      sender: { id: "1727274415048488", name: "Rafael", username: "rafael_do_paredao_" },
+      ...msg,
+    });
+
+  it("entra com o id do Instagram como âncora, com prefixo próprio", () => {
+    const r = parseZernioInbound(ig());
+    expect(r?.direction).toBe("inbound");
+    expect(r?.identity.anchor).toEqual({ kind: "bsuid", value: "ig.1727274415048488" });
+    expect(r?.identity.phone).toBeNull();
+    expect(r?.identity.displayName).toBe("Rafael");
+  });
+
+  it("sem nome, mostra o @", () => {
+    const r = parseZernioInbound(ig({ sender: { id: "1", username: "cliente_x" } }));
+    expect(r?.identity.displayName).toBe("cliente_x");
+  });
+
+  it("na saída, o contato é o participante — nunca a própria loja", () => {
+    const r = parseZernioInbound(
+      ig(
+        { direction: "outgoing", sender: { id: "17841418045223676", username: "spacephoneribeirao" } },
+        { conversation: { participantId: "1727274415048488", participantName: "rafael_do_paredao_" } },
+      ),
+    );
+    expect(r?.direction).toBe("outbound");
+    expect(r?.identity.anchor?.value).toBe("ig.1727274415048488");
+  });
+
+  it("sem id do remetente não há âncora", () => {
+    expect(parseZernioInbound(ig({ sender: { username: "x" } }))?.identity.anchor).toBeNull();
+  });
+});
+
+describe("janela — Instagram sem trava", () => {
+  it("conta de Instagram não fecha o composer, mesmo dias depois", async () => {
+    const { estadoDaJanela } = await import("@/lib/channels/janela");
+    const agora = new Date("2026-09-20T12:00:00Z");
+    expect(estadoDaJanela("zernio", "2026-09-10T12:00:00Z", agora, "instagram")).toEqual({ tipo: "sem_restricao" });
+    expect(estadoDaJanela("zernio", "2026-09-10T12:00:00Z", agora).tipo).toBe("fechada");
   });
 });

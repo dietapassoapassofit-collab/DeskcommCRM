@@ -51,6 +51,8 @@ export type PartnerValidation =
       displayName: string | null;
       /** Qualidade do número segundo a plataforma (GREEN/YELLOW/RED). */
       qualityRating: string | null;
+      /** Rede da conta. Vai para `channel_sessions.metadata.plataforma`. */
+      plataforma: "whatsapp" | "instagram";
     }
   | { ok: false; reason: string };
 
@@ -104,10 +106,23 @@ export async function validatePartnerCredentials(
     return { ok: false, reason: "Conta não encontrada para esta chave." };
   }
 
+  if (conta.platform === "instagram") {
+    // Instagram não tem número nem nota de qualidade: o que identifica a
+    // conexão para o operador é o @ da conta.
+    const usuario = typeof conta.username === "string" ? conta.username : null;
+    return {
+      ok: true,
+      phoneNumber: null,
+      displayName: usuario ? `Instagram @${usuario}` : "Instagram",
+      qualityRating: null,
+      plataforma: "instagram",
+    };
+  }
+
   if (conta.platform !== "whatsapp") {
     return {
       ok: false,
-      reason: `Esta conta é de ${String(conta.platform ?? "outra rede")}, não de WhatsApp.`,
+      reason: `Esta conta é de ${String(conta.platform ?? "outra rede")}, não de WhatsApp nem de Instagram.`,
     };
   }
 
@@ -117,6 +132,7 @@ export async function validatePartnerCredentials(
     phoneNumber: typeof meta.displayPhoneNumber === "string" ? meta.displayPhoneNumber : null,
     displayName: typeof conta.displayName === "string" ? conta.displayName : null,
     qualityRating: typeof meta.qualityRating === "string" ? meta.qualityRating : null,
+    plataforma: "whatsapp",
   };
 }
 
@@ -199,6 +215,7 @@ export async function savePartnerSession(
     webhookSecretEncrypted: string;
     phoneNumber: string | null;
     displayName: string;
+    plataforma?: "whatsapp" | "instagram";
   },
 ): Promise<{ error: string | null }> {
   const linha = {
@@ -212,6 +229,10 @@ export async function savePartnerSession(
     display_name: input.displayName,
     status: "WORKING",
     archived_at: null,
+    // A rede decide a janela (`lib/channels/janela.ts`) e a etiqueta do envio
+    // (`adapters/zernio.ts`). Só o Instagram grava: WhatsApp é o padrão, e não
+    // mexer no `metadata` dele preserva o que já estiver lá.
+    ...(input.plataforma === "instagram" ? { metadata: { plataforma: "instagram" } } : {}),
   };
 
   const { error } = input.existingId

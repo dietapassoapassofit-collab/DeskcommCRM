@@ -126,7 +126,7 @@ export function CanalParceiroClient() {
           <div>
             <h3 className="text-sm font-semibold">Conectar por {rotulo}</h3>
             <p className="text-xs text-muted-foreground">
-              Um número oficial (WhatsApp Business) conectado através do seu provedor. As mensagens
+              Um número oficial (WhatsApp Business) ou uma conta do Instagram, conectados através do seu provedor. As mensagens
               entram e saem pelo CRM, e os modelos aprovados são os mesmos da sua conta.
             </p>
           </div>

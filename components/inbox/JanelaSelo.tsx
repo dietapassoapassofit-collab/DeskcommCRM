@@ -36,9 +36,11 @@ import { cn } from "@/lib/utils";
  */
 export function JanelaSelo({
   provider,
+  plataforma,
   lastInboundAt,
 }: {
   provider: string | null | undefined;
+  plataforma?: string | null;
   lastInboundAt: string | null;
 }) {
   // O relógio do servidor não serve: o que importa é quanto falta AGORA, na
@@ -49,7 +51,7 @@ export function JanelaSelo({
     return () => clearInterval(t);
   }, []);
 
-  const estado = estadoDaJanela(provider, lastInboundAt, agora);
+  const estado = estadoDaJanela(provider, lastInboundAt, agora, plataforma);
   if (estado.tipo === "sem_restricao") return null;
 
   if (estado.tipo === "fechada") {

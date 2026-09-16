@@ -242,7 +242,7 @@ describe("o que a ingestão RECUSA", () => {
   };
 
   it("outra plataforma na mesma conta", () =>
-    recusa(evento({ platform: "instagram" }), "evento_sem_interesse"));
+    recusa(evento({ platform: "telegram" }), "evento_sem_interesse"));
 
   it("sem identidade utilizável — criar contato anônimo faria a próxima mensagem virar um segundo contato", () =>
     recusa(evento({ sender: { whatsappUsername: "@x" } }), "sem_identidade_utilizavel"));
@@ -478,5 +478,32 @@ describe("o carimbo da conversa — o elo que faltava", () => {
     });
     const carimbo = ops.find((o) => o.op === "fn_mark_conversation_message");
     expect(carimbo?.payload).toMatchObject({ p_direction: "outbound" });
+  });
+});
+
+describe("Instagram Direct e importação do histórico", () => {
+  beforeEach(() => {
+    ops.length = 0;
+    conversaExistente = null;
+    insertErro = null;
+  });
+
+  it("contato do Instagram entra pelo trilho do id opaco, com prefixo ig.", async () => {
+    await ingestZernioInbound(admin, {
+      ...ENTRADA,
+      payload: evento({ platform: "instagram", platformMessageId: "aWdf_1", sender: { id: "1727", name: "Rafael" } }),
+    });
+    const upsert = ops.find((o) => o.op === "fn_upsert_wa_contact");
+    expect(upsert?.payload).toMatchObject({ p_kind: "lid", p_lid: "ig.1727", p_phone: null, p_notify: "Rafael" });
+  });
+
+  it("histórico grava a mensagem mas não roda os efeitos da entrada", async () => {
+    await ingestZernioInbound(admin, { ...ENTRADA, payload: evento() });
+    const comEfeitos = ops.length;
+    ops.length = 0;
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: { ...evento(), historico: true } });
+    expect(r.status).toBe("ingested");
+    expect(ops.some((o) => o.tabela === "messages" && o.op === "insert")).toBe(true);
+    expect(ops.length).toBeLessThan(comEfeitos);
   });
 });

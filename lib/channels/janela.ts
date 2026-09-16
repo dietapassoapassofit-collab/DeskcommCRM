@@ -57,8 +57,14 @@ export function estadoDaJanela(
   provider: string | null | undefined,
   lastInboundAt: string | null,
   agora: Date,
+  /** `channel_sessions.metadata.plataforma` — ausente = WhatsApp. */
+  plataforma?: string | null,
 ): EstadoDaJanela {
   if (!provider) return { tipo: "sem_restricao" };
+  // Instagram: o atendente responde sem trava (pedido do cliente, 09/2026). O
+  // envio vai com HUMAN_AGENT (7 dias); passado isso, a Meta recusa e a
+  // mensagem aparece como `failed` com o motivo — não some.
+  if (plataforma === "instagram") return { tipo: "sem_restricao" };
 
   const caps = capabilitiesOf(provider as ChannelProvider);
   // `freeformOutsideWindow: true` = o canal aceita texto livre a qualquer hora.

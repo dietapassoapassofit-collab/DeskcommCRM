@@ -69,6 +69,12 @@ export async function ingestZernioInbound(
   const msg = parseZernioInbound(input.payload);
   if (!msg) return { status: "ignored", reason: "evento_sem_interesse" };
 
+  // Importação do histórico (`scripts/importar-historico-instagram.py`): o
+  // corpo vem ASSINADO com o segredo do webhook, então só quem o tem marca.
+  // Mensagem antiga grava e carimba a conversa, mas não cria lead, não acorda
+  // o agente e não dispara automação — tudo isso já passou.
+  const historico = (input.payload as { historico?: unknown } | null)?.historico === true;
+
   // Evento de DESFECHO: a mensagem já existe (ou nem é nossa). Só atualiza o
   // status — inserir aqui criaria uma segunda linha para a mesma mensagem, uma
   // por transição de estado.
@@ -132,7 +138,9 @@ export async function ingestZernioInbound(
           inseridaNaExistente,
         );
       }
-      await efeitosDaEntrada(admin, input, msg, existente.contact_id, existente.id, inseridaNaExistente);
+      if (!historico) {
+        await efeitosDaEntrada(admin, input, msg, existente.contact_id, existente.id, inseridaNaExistente);
+      }
     }
     return inseridaNaExistente === "duplicate"
       ? { status: "duplicate", conversationId: existente.id }
@@ -171,7 +179,7 @@ export async function ingestZernioInbound(
   if (msg.attachments[0]?.url) {
     await pedirPersistenciaDaMidia(admin, input.organizationId, conversationId, inserted);
   }
-  await efeitosDaEntrada(admin, input, msg, contactId, conversationId, inserted);
+  if (!historico) await efeitosDaEntrada(admin, input, msg, contactId, conversationId, inserted);
   return { status: "ingested", conversationId, messageId: inserted };
 }
 

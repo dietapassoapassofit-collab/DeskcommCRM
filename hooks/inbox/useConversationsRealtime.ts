@@ -44,6 +44,8 @@ export interface ChannelSummary {
    * que a doutrina proíbe, e ele mora atrás do seam.
    */
   provider: string | null;
+  /** `metadata.plataforma` da sessão — repassado a `estadoDaJanela`, idem. */
+  plataforma?: string | null;
 }
 
 export type ConversationWithContact = Conversation & {

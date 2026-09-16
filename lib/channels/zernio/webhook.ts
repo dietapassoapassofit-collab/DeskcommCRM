@@ -116,8 +116,25 @@ const str = (v: unknown): string | null => (typeof v === "string" && v.length > 
  * username. Telefone é o fallback — e continua sendo o caso comum hoje.
  * `whatsappUsername` NUNCA vira âncora: a própria doc avisa que não é estável.
  */
-export function resolveZernioIdentity(sender: Bruto | null): ZernioIdentity {
+export function resolveZernioIdentity(sender: Bruto | null, plataforma = "whatsapp"): ZernioIdentity {
   const s = sender ?? {};
+
+  // Instagram não expõe telefone: a âncora é o id que a Meta dá à pessoa
+  // dentro desta conta, em `sender.id`. Entra pelo mesmo trilho do BSUID (id
+  // opaco → `lid:`), com o prefixo `ig.` para nunca coincidir com um LID do
+  // WhatsApp — os dois são só dígitos.
+  if (plataforma === "instagram") {
+    const id = str(s.id);
+    const username = str(s.username);
+    return {
+      phone: null,
+      bsuid: null,
+      username,
+      displayName: str(s.name) ?? username,
+      anchor: id ? { kind: "bsuid", value: `ig.${id}` } : null,
+    };
+  }
+
   const phone = str(s.phoneNumber);
   const bsuid = str(s.businessScopedUserId);
   const username = str(s.whatsappUsername);
@@ -149,6 +166,16 @@ const EVENTOS_DE_STATUS: Record<string, "delivered" | "read" | "failed"> = {
 };
 
 /**
+ * Redes que viram conversa no inbox. A mesma conta do provedor serve outras
+ * (Facebook, Telegram...), e um DM de rede não atendida entrando como conversa
+ * é pior que ignorá-lo.
+ *
+ * Instagram entrou em 09/2026 (SpacePhone Ribeirão): só o Direct, atendido por
+ * gente. O envio já endereça pela thread, então nada muda do lado de lá.
+ */
+const PLATAFORMAS_ATENDIDAS = new Set(["whatsapp", "instagram"]);
+
+/**
  * O autor editou ou apagou a mensagem no aplicativo.
  *
  * Separado de `parseZernioInbound` porque o efeito é outro: aquele CRIA linha
@@ -176,8 +203,8 @@ export function parseZernioEdicao(payload: unknown): ZernioEdicao | null {
   const m = obj(p.message);
   if (!m) return null;
   // Mesma regra do parser de mensagem: a conta serve outras plataformas, e uma
-  // edição de DM de outra rede não tem linha nossa para corrigir.
-  if (str(m.platform) !== "whatsapp") return null;
+  // edição de DM de rede não atendida não tem linha nossa para corrigir.
+  if (!PLATAFORMAS_ATENDIDAS.has(str(m.platform) ?? "")) return null;
 
   const externalId = str(m.platformMessageId) ?? str(m.id);
   if (!externalId) return null;
@@ -200,9 +227,9 @@ export function parseZernioInbound(payload: unknown): ZernioInboundMessage | nul
   const m = obj(p.message);
   if (!m) return null;
 
-  // Só WhatsApp: a mesma conta serve outras plataformas, e um DM de outra rede
-  // entrando como conversa de WhatsApp é pior que ignorá-lo.
-  if (str(m.platform) !== "whatsapp") return null;
+  // Só as redes atendidas — ver `PLATAFORMAS_ATENDIDAS`.
+  const plataforma = str(m.platform) ?? "";
+  if (!PLATAFORMAS_ATENDIDAS.has(plataforma)) return null;
 
   const conversationId = str(m.conversationId);
   const externalId = str(m.platformMessageId) ?? str(m.id);
@@ -235,8 +262,8 @@ export function parseZernioInbound(payload: unknown): ZernioInboundMessage | nul
     // do negócio, e toda conversa de saída viraria uma conversa com a gente
     // mesmo. Quem está do outro lado está em `conversation.participantId`.
     identity: saida
-      ? resolveZernioIdentity(participanteDaConversa(obj(p.conversation)))
-      : resolveZernioIdentity(obj(m.sender)),
+      ? resolveZernioIdentity(participanteDaConversa(obj(p.conversation), plataforma), plataforma)
+      : resolveZernioIdentity(obj(m.sender), plataforma),
     // Posição exata NÃO VERIFICADA contra o provider real (nunca chegou um
     // clique de anúncio nesta instalação) — tenta na mensagem primeiro (forma
     // documentada da Cloud API), cai para o nível do evento como fallback.
@@ -245,10 +272,15 @@ export function parseZernioInbound(payload: unknown): ZernioInboundMessage | nul
 }
 
 /** O outro lado da conversa, na forma que `resolveZernioIdentity` entende. */
-function participanteDaConversa(c: Bruto | null): Bruto | null {
+function participanteDaConversa(c: Bruto | null, plataforma: string): Bruto | null {
   if (!c) return null;
   const id = str(c.participantId);
   if (!id) return null;
+  // No Instagram o `participantId` é o id da pessoa na rede, não telefone —
+  // a mesma forma que `sender` traz na entrada.
+  if (plataforma === "instagram") {
+    return { id, name: str(c.participantName), username: str(c.participantUsername) };
+  }
   // O provider entrega o telefone SEM `+` neste campo (medido: `595985321822`).
   // Normalizar aqui mantém a âncora idêntica à do caminho de entrada — sem
   // isso o MESMO cliente viraria dois contatos, um por direção.

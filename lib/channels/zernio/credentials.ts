@@ -38,6 +38,8 @@ export interface ZernioCredentials {
   baseUrl: string;
   /** De onde veio — aparece no log de diagnóstico, nunca no payload. */
   source: "session" | "env";
+  /** Rede da conta (`channel_sessions.metadata.plataforma`); ausente = WhatsApp. */
+  plataforma?: string | null;
 }
 
 /** A chave da busca. `organizationId` NÃO é decoração: ver o cabeçalho. */
@@ -92,7 +94,7 @@ export async function zernioCredsForAccountId(
   const base = () =>
     admin
       .from("channel_sessions")
-      .select("zernio_account_id, zernio_token_encrypted")
+      .select("zernio_account_id, zernio_token_encrypted, metadata")
       .eq("organization_id", organizationId)
       .eq("zernio_account_id", accountId);
   const { data, error } = await queryTolerantToMissingArchived(
@@ -119,6 +121,7 @@ export async function zernioCredsForAccountId(
     apiKey,
     baseUrl: zernioBaseUrl(),
     source: "session",
+    plataforma: ((data.metadata ?? null) as { plataforma?: string } | null)?.plataforma ?? null,
   };
 }
 

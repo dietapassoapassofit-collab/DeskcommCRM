@@ -87,6 +87,7 @@ export function ConversationHeader({ conversation }: Props) {
               `failed` com um código de cinco dígitos. */}
           <JanelaSelo
             provider={conversation.channel_sessions?.provider ?? null}
+            plataforma={conversation.channel_sessions?.plataforma ?? null}
             lastInboundAt={conversation.last_inbound_at}
           />
           {/* Sem esta marca, a conversa em que o robô está calado tem exatamente
