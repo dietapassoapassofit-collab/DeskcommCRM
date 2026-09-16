@@ -467,7 +467,7 @@ export function CRMSidePanel({ conversation }: Props) {
 
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Leads recentes
+          Funil
         </h3>
         {sectionsLoading ? (
           <Skeleton className="mt-2 h-14 w-full" />
@@ -495,7 +495,11 @@ export function CRMSidePanel({ conversation }: Props) {
             ))}
           </ul>
         ) : (
-          <SemLista vazio="Sem leads." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
+          <SemLista
+            vazio="Ainda não está no funil."
+            erro={erro}
+            onTentarDeNovo={() => setTentativa((n) => n + 1)}
+          />
         )}
       </section>
 
