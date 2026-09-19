@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { agendaDoFluxo } from "@/lib/followup/agenda-do-fluxo";
+import { agendaDoFluxo, quemEscreve } from "@/lib/followup/agenda-do-fluxo";
 
 const H = 3_600_000;
 const sempre = { type: "always" };
@@ -46,5 +46,14 @@ describe("agendaDoFluxo", () => {
     const g = fluxoLinear() as unknown as { edges: object[] };
     g.edges.push({ id: "volta", source: "fim", target: "t", condition: sempre });
     expect(agendaDoFluxo(g as never)).toHaveLength(3);
+  });
+});
+
+describe("quemEscreve — o que a janela do Inbox promete", () => {
+  it("só Conteúdo = texto pronto; só Ação = IA; os dois = misto; nada = null", () => {
+    expect(quemEscreve([{ aposMs: 0, modo: "content" }])).toBe("pronto");
+    expect(quemEscreve([{ aposMs: 0, modo: "ai_message" }, { aposMs: 1, modo: "template" }])).toBe("ia");
+    expect(quemEscreve([{ aposMs: 0, modo: "content" }, { aposMs: 1, modo: "ai_message" }])).toBe("misto");
+    expect(quemEscreve([])).toBeNull();
   });
 });

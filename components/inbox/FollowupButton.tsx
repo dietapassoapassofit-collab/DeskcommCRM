@@ -28,7 +28,7 @@ import {
 import { useFollowupFlow } from "@/hooks/followup/useFollowupFlow";
 import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
 import { useCancelFollowupEnrollment } from "@/hooks/followup/useFollowupQueue";
-import { agendaDoFluxo } from "@/lib/followup/agenda-do-fluxo";
+import { agendaDoFluxo, quemEscreve } from "@/lib/followup/agenda-do-fluxo";
 
 interface Props {
   contactId: string | null;
@@ -57,13 +57,20 @@ function AgendaDoFluxo({ pointerId }: { pointerId: string }) {
           <span className="font-mono text-xs tabular-nums text-muted-foreground">{quando(envio.aposMs)}</span>
           <span>
             {i === envios.length - 1 && envios.length > 1 ? "Última mensagem" : `${i + 1}ª mensagem`}
-            {envio.modo === "ai_message" ? " — escrita pela IA" : " — texto fixo"}
+            {envio.modo === "content" ? " — texto pronto" : " — escrita pela IA"}
           </span>
         </li>
       ))}
+      <li className="pt-1 text-sm text-muted-foreground">{FRASE_DE_QUEM_ESCREVE[quemEscreve(envios) ?? "ia"]}</li>
     </ol>
   );
 }
+
+const FRASE_DE_QUEM_ESCREVE: Record<"pronto" | "ia" | "misto", string> = {
+  pronto: "As mensagens saem exatamente como foram escritas no fluxo.",
+  ia: "A IA escreve cada mensagem na hora de enviar, usando esta conversa e o catálogo.",
+  misto: "Parte das mensagens sai como escrita no fluxo; as marcadas \"escrita pela IA\" são escritas na hora.",
+};
 
 export function FollowupButton({ contactId }: Props) {
   const podeUsar = usePermission("ai.followups.enroll");
@@ -108,9 +115,7 @@ export function FollowupButton({ contactId }: Props) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Colocar este lead no follow-up?</DialogTitle>
-            <DialogDescription>
-              A IA escreve cada mensagem na hora de enviar, usando esta conversa e o catálogo.
-            </DialogDescription>
+            <DialogDescription>Escolha o fluxo e confira o que vai ser enviado.</DialogDescription>
           </DialogHeader>
 
           {ativos.length === 0 ? (
@@ -136,7 +141,7 @@ export function FollowupButton({ contactId }: Props) {
               </div>
               {selecionado && <AgendaDoFluxo pointerId={selecionado} />}
               <p className="rounded-md border p-3 text-sm">
-                Envia de verdade no WhatsApp da loja, mesmo com o agente de IA desligado. Se o lead estiver em
+                Envia de verdade na conversa do cliente (WhatsApp ou Instagram), mesmo com o agente de IA desligado. Se o lead estiver em
                 atendimento humano, ele é liberado só para o follow-up — quem atende continua na conversa.
               </p>
             </div>

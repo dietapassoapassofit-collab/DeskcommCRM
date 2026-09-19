@@ -7,6 +7,19 @@ export interface EnvioDaAgenda {
 }
 
 /**
+ * Quem escreve as mensagens deste fluxo — o que a janela do Inbox diz antes de
+ * colocar o lead. O modo `template` da Ação também passa pelo modelo hoje (o
+ * turno do fluxo não lê o modelo escolhido), então conta como IA: a tela não
+ * pode prometer texto fixo que não sai fixo.
+ */
+export function quemEscreve(envios: EnvioDaAgenda[]): "pronto" | "ia" | "misto" | null {
+  if (envios.length === 0) return null;
+  const prontos = envios.filter((e) => e.modo === "content").length;
+  if (prontos === envios.length) return "pronto";
+  return prontos === 0 ? "ia" : "misto";
+}
+
+/**
  * Os envios que o fluxo faz, em ordem, com o tempo acumulado desde a inscrição.
  * Parte do trigger e segue a aresta de fallback (`condition.type === "always"`),
  * ou a única aresta de saída quando só existe uma.
