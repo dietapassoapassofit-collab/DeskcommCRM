@@ -704,7 +704,6 @@ async function runFlowContentSend(
     }
   }
 
-  const camadasDaOrg = await lerCamadasDaOrg(pool, tenantId);
   const context = await getLeadContext(pool, deps.crmCfg, { tenantId, leadId }, {
     historyLimit: deps.knobs.historyLimit,
     maxTokens: deps.knobs.maxContextTokens,
@@ -757,18 +756,9 @@ async function runFlowContentSend(
       sleep: deps.sleep,
       lgpd: context.lgpd,
       ...(deps.knobs.disclosureMode !== undefined ? { disclosureMode: deps.knobs.disclosureMode } : {}),
-      ...(camadaLigada(camadasDaOrg.promessa_semantica, deps.knobs.promiseSemantic?.enabled === true)
-        ? {
-            classifyPromiseSemantic: (candidate: string) =>
-              classifyPromise(
-                pool,
-                deps.llmCfg,
-                { tenantId, leadId, jobId: job.id },
-                { candidate, ...(deps.knobs.promiseSemantic?.model !== undefined ? { model: deps.knobs.promiseSemantic.model } : {}) },
-                { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
-              ),
-          }
-        : {}),
+      // SEM a camada semântica de promessa: ela avalia o que o MODELO escreveu, e
+      // aqui o texto é da equipe, escrito na tela. Chamá-la faria o bloco "sem IA"
+      // depender de crédito de IA — medido: sem crédito na conta, o envio falhava.
       send: (finalBody) =>
         channel.send({
           tenantId,
