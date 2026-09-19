@@ -34,6 +34,8 @@ describe('graph-schema', () => {
         'ai_classify',
         'action',
         'end',
+        'randomizer',
+        'content',
       ]);
     });
 

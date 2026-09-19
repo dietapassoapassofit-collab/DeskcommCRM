@@ -3,7 +3,7 @@ import type { FlowGraph } from "@/lib/followup/graph-schema";
 export interface EnvioDaAgenda {
   /** ms desde a inscrição até este envio; null quando uma espera anterior é "smart" (a IA decide). */
   aposMs: number | null;
-  modo: "ai_message" | "template";
+  modo: "ai_message" | "template" | "content";
 }
 
 /**
@@ -30,8 +30,18 @@ export function agendaDoFluxo(graph: FlowGraph): EnvioDaAgenda[] {
     if (atual.type === "action" && (atual.config.mode === "ai_message" || atual.config.mode === "template")) {
       envios.push({ aposMs, modo: atual.config.mode });
     }
+    if (atual.type === "content") envios.push({ aposMs, modo: "content" });
     const opcoes = saidas(atual.id);
-    const proxima =
+    // Randomizador: a agenda segue o 1º caminho — os outros têm o mesmo ritmo
+    // na maioria dos fluxos, e mostrar uma linha só é o que cabe no botão.
+    type Aresta = (typeof opcoes)[number];
+    let primeiroCaminho: Aresta | undefined;
+    if (atual.type === "randomizer") {
+      const alvo: string | undefined = atual.config.branches[0]?.id;
+      primeiroCaminho = opcoes.find((e) => e.condition.type === "branch" && e.condition.branch_id === alvo);
+    }
+    const proxima: Aresta | undefined =
+      primeiroCaminho ??
       opcoes.find((e) => (e as { condition?: { type?: string } }).condition?.type === "always") ??
       (opcoes.length === 1 ? opcoes[0] : undefined);
     atual = proxima ? nos.get(proxima.target) : undefined;

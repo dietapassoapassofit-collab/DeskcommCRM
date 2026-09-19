@@ -10,6 +10,8 @@ import type { RFNode, RFNodeData } from "@/lib/followup/graph-mappers";
 import { ActionForm } from "./forms/ActionForm";
 import { ClassifyForm } from "./forms/ClassifyForm";
 import { ConditionForm } from "./forms/ConditionForm";
+import { ContentForm } from "./forms/ContentForm";
+import { RandomizerForm } from "./forms/RandomizerForm";
 import { EndForm } from "./forms/EndForm";
 import { WaitForm } from "./forms/WaitForm";
 import type { ConfigOf } from "./forms/shared";
@@ -101,6 +103,16 @@ export function NodeConfigPanel({ node, onChange, ramosLigados }: Props) {
         )}
         {type === "end" && (
           <EndForm config={node.data.config as ConfigOf<"end">} onChange={(config) => onChange({ config })} />
+        )}
+        {type === "randomizer" && (
+          <RandomizerForm
+            config={node.data.config as ConfigOf<"randomizer">}
+            onChange={(config) => onChange({ config })}
+            ramosLigados={ramosLigados}
+          />
+        )}
+        {type === "content" && (
+          <ContentForm config={node.data.config as ConfigOf<"content">} onChange={(config) => onChange({ config })} />
         )}
       </div>
     </div>

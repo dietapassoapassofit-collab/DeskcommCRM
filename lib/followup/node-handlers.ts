@@ -4,7 +4,7 @@
  * this node + these facts, what happens next" so it's testable without Postgres.
  */
 import { NO_REPLY_BRANCH_ID, nodeBranches } from "./graph-schema";
-import type { FlowEdge, FlowNode } from "./graph-schema";
+import type { FlowEdge, FlowNode, RandomizerBranch } from "./graph-schema";
 import { clampEspera, esperaPlanejadaDe, type EsperaAdaptativa } from "./timing-plan";
 
 export type EnrollmentStatus =
@@ -196,6 +196,31 @@ export function selectEdge(edges: FlowEdge[], from: string, match: EdgeMatch): F
     if (fallback) return fallback;
   }
   return null;
+}
+
+/**
+ * Qual caminho do Randomizador este lead segue.
+ *
+ * DETERMINÍSTICO pela semente (enrollment + nó): FNV-1a de 32 bits → 0..99 →
+ * faixa acumulada dos pesos. Um sorteio de verdade (Math.random) mandaria o
+ * mesmo lead por outro caminho a cada reprocessamento do passo, e ele poderia
+ * receber duas versões da mesma mensagem.
+ */
+export function escolherCaminho(branches: RandomizerBranch[], semente: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < semente.length; i++) {
+    h ^= semente.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  const ponto = h % 100;
+  let acumulado = 0;
+  for (const b of branches) {
+    acumulado += b.weight;
+    if (ponto < acumulado) return b.id;
+  }
+  // Pesos somando menos de 100 não passam no esquema; isto só cobre um grafo
+  // antigo gravado fora da validação — o último caminho absorve a sobra.
+  return branches[branches.length - 1]!.id;
 }
 
 /**
@@ -402,6 +427,16 @@ export function processNode(input: {
       return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
     }
 
+    case "randomizer": {
+      const caminho = escolherCaminho(node.config.branches, `${enrollment.id}:${node.id}`);
+      const edge = selectEdge(edges, node.id, { type: "branch", branch_id: caminho });
+      if (!edge) return { kind: "fail", error: `randomizer node "${node.id}" has no edge for branch "${caminho}"` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
+    }
+
+    // `content` envia mensagens prontas pelo MESMO trilho do `action`: um turno
+    // por ocupação, rechecks enquanto ele roda e o mesmo dead-man.
+    case "content":
     case "action": {
       // At-most-once send: enqueue the turn EXACTLY ONCE per occupancy. First entry
       // (no prior occupancy event) enqueues; a recheck fired while the turn is still in

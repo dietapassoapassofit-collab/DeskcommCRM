@@ -41,8 +41,10 @@ export interface ChannelSendInput {
    * boas-vindas, material pronto da empresa). Em áudio o `body` é a transcrição — o que
    * o histórico do modelo lê no lugar do som; em imagem vai vazio, porque viraria legenda.
    */
+  /** "digitando…" antes desta mensagem, em ms — bloco Conteúdo do follow-up. */
+  typingMs?: number;
   media?: {
-    kind: 'audio' | 'image';
+    kind: 'audio' | 'image' | 'video';
     /** caminho no bucket, dentro de `<org>/<conversa>/` (o sink recusa fora disso) */
     storagePath: string;
     mime: string;

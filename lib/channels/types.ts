@@ -137,6 +137,12 @@ export interface OutboundEnvelope extends ChannelTenantScope {
    * `undefined` = envio solto, que é o caso comum.
    */
   replyToExternalId?: string | null;
+  /**
+   * Quanto tempo mostrar "digitando…" antes desta mensagem, em ms. Ausente = o
+   * canal decide (por QR: proporcional ao tamanho do texto). Canal sem o gesto
+   * ignora.
+   */
+  typingMs?: number;
 }
 
 /**

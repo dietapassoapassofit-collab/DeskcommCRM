@@ -33,6 +33,9 @@ export interface TurnBridgeAdminClient extends AdminClient {
 /** Resultado de um turno `followup_turn` dirigido por fluxo, por `purpose`. */
 export type TurnResult =
   | { kind: "sent" }
+  /** O bloco Conteúdo decidiu NÃO enviar (Instagram fora das 24h, trava antibloqueio,
+   *  contato bloqueado). O fluxo segue pela saída normal, com o motivo registrado. */
+  | { kind: "skipped"; reason: string }
   | { kind: "classified"; class: string }
   /** Plano de tempo do fluxo inteiro, proposto no acionamento — cru, antes do clamp. */
   | { kind: "planned"; propostas: PropostaDeEspera[]; modelo: string };
@@ -108,15 +111,15 @@ export async function completeTurnForEnrollment(
     });
   };
 
-  if (result.kind === "sent") {
-    if (node.type !== "action") {
-      throw new Error(`completeTurnForEnrollment: resultado 'sent' mas o nó "${node.id}" não é 'action'`);
+  if (result.kind === "sent" || result.kind === "skipped") {
+    if (node.type !== "action" && node.type !== "content") {
+      throw new Error(`completeTurnForEnrollment: resultado '${result.kind}' mas o nó "${node.id}" não envia mensagem`);
     }
     const edge = selectEdge(graph.edges, node.id, { type: "always" });
-    if (!edge) throw new Error(`action node "${node.id}" sem aresta 'always' de saída`);
+    if (!edge) throw new Error(`${node.type} node "${node.id}" sem aresta 'always' de saída`);
     await applyStep(
-      "action_sent",
-      {},
+      result.kind === "sent" ? "action_sent" : "content_skipped",
+      result.kind === "sent" ? {} : { reason: result.reason },
       { current_node_id: edge.target, status: "active", next_eval_at: now.toISOString() },
     );
     return;

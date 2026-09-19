@@ -107,6 +107,10 @@ export {
   WebhooksLogo,
   PuzzlePiece,
   UploadSimple,
+  // construtor de follow-up: Randomizador, Conteúdo e o vídeo do Conteúdo
+  Shuffle,
+  ChatText,
+  VideoCamera,
   Signpost,
   // atualização de versão
   ArrowCircleUp,

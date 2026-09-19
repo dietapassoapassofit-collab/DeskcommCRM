@@ -40,6 +40,7 @@
 import type { z } from "zod";
 
 import type { TriggerConfig } from "./api-schemas";
+import type { ContentItem } from "./graph-schema";
 import { conditionLabel } from "./edge-condition-options";
 import {
   CONDITION_FALSE_BRANCH_ID,
@@ -68,6 +69,7 @@ export type ResultadoDoFim = z.infer<typeof endConfigSchema>["outcome"];
 export type ModoDeEspera = z.infer<typeof waitConfigSchema>["mode"];
 export type ModoDaAcao = z.infer<typeof actionConfigSchema>["mode"];
 export type TipoDeGatilho = TriggerConfig["kind"];
+export type MidiaDoConteudo = Extract<ContentItem, { kind: "media" }>["media_kind"];
 
 /** `{ valor, rotulo }` na ordem de declaração do mapa — pronto para um `<Select>`. */
 export function opcoes<K extends string>(mapa: Record<K, string>): ReadonlyArray<{ valor: K; rotulo: string }> {
@@ -409,6 +411,12 @@ export const MODOS_DE_ESPERA: Record<ModoDeEspera, string> = {
 export const MODOS_DA_ACAO: Record<ModoDaAcao, string> = {
   ai_message: "Mensagem escrita pela IA",
   template: "Modelo de mensagem pronto",
+};
+
+/** Tipo do arquivo num item de mídia do bloco Conteúdo. */
+export const MIDIAS_DO_CONTEUDO: Record<MidiaDoConteudo, string> = {
+  image: "Foto",
+  video: "Vídeo",
 };
 
 // ─── nó final ────────────────────────────────────────────────────────────

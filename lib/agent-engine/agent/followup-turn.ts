@@ -18,6 +18,11 @@
 import { z } from 'zod';
 import type pg from 'pg';
 
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+import { ehIdentificadorTecnico } from '@/lib/contacts/rotulo-do-contato';
+import { interpolateTemplate } from '@/lib/inbox/template-vars';
+
 import { withFields } from '../obs/logger';
 import type { JobRow } from '../queue/queue';
 import { getLeadContext, type LeadContext } from '../edge/crm/get-lead-context';
@@ -85,13 +90,40 @@ export const followupTurnPayloadSchema = z
         }),
       )
       .optional(),
+    // bloco Conteúdo: os itens, na ordem. Lidos por `itemDoConteudoSchema` no envio.
+    content: z.array(z.unknown()).optional(),
   })
   .passthrough();
+
+/**
+ * Item do bloco Conteúdo — ESPELHO do `contentItemSchema` de lib/followup
+ * (agent-engine não importa followup/*: dependência numa direção só). Loose de
+ * propósito: campo a mais que a tela acrescentar não pode derrubar o envio.
+ */
+const itemDoConteudoSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('text'), text: z.string().min(1) }),
+  z.object({
+    kind: z.literal('media'),
+    media_kind: z.enum(['image', 'video']),
+    storage_path: z.string().min(1),
+    mime: z.string().min(1),
+  }),
+  z.object({ kind: z.literal('typing'), seconds: z.number().int().min(1).max(20) }),
+]);
+type ItemDoConteudo = z.infer<typeof itemDoConteudoSchema>;
+
+/** Janela em que o Instagram aceita mensagem automática (depois dela, só atendente humano). */
+const JANELA_INSTAGRAM_MS = 24 * HOUR_MS;
+/** Teto do "digitando…" antes de uma mensagem — acima disso o cliente acha que travou. */
+const DIGITANDO_MAX_MS = 20_000;
+/** Pasta da mídia do bloco Conteúdo no bucket — ver FOLLOWUP_MEDIA_FOLDER em lib/followup. */
+const PASTA_MIDIA_DO_FOLLOWUP = 'followup-media';
 
 /** Resultado de um turno dirigido por fluxo — espelha `TurnResult` de lib/followup/turn-bridge.ts
  *  (agent-engine não importa followup/* — regra dura de dependência numa direção só). */
 export type FollowupFlowTurnResult =
   | { kind: 'sent' }
+  | { kind: 'skipped'; reason: string }
   | { kind: 'classified'; class: string }
   | { kind: 'planned'; propostas: PropostaDeEsperaBruta[]; modelo: string };
 
@@ -285,6 +317,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
         classes: payload.classes,
         hint: payload.hint,
         waits: payload.waits,
+        content: payload.content,
       });
       return;
     }
@@ -348,6 +381,7 @@ async function runFlowDrivenTurn(
     classes: string[] | undefined;
     hint: string | undefined;
     waits: EsperaParaPlanejar[] | undefined;
+    content: unknown[] | undefined;
   },
 ): Promise<void> {
   if (input.nodeId === undefined || input.purpose === undefined) {
@@ -361,6 +395,14 @@ async function runFlowDrivenTurn(
   }
   const { enrollmentId, nodeId } = input;
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId, enrollment_id: enrollmentId });
+
+  // Bloco Conteúdo: mensagens PRONTAS, sem modelo. `null` = re-agendado pela
+  // janela anti-ban — o disparo re-agendado é quem fecha o passo.
+  if (input.purpose === 'send_message' && input.content !== undefined) {
+    const resultado = await runFlowContentSend(deps, job, pool, clock, target, input.content);
+    if (resultado !== null) await complete(pool, { organizationId: target.tenantId, enrollmentId, nodeId, result: resultado });
+    return;
+  }
 
   if (input.purpose === 'send_message') {
     await runAgentTurn(deps, job, pool, ctx, {
@@ -570,6 +612,205 @@ async function runDeterministicReentry(
     case 'unavailable':
       throw new Error(`re-entrada determinística: canal indisponível (${outcome.reason}) — run re-tentado pela fila`);
   }
+}
+
+/**
+ * `{{primeiro_nome}}`/`{{nome}}` com o nome do contato. Sem nome utilizável
+ * (vazio, ou um identificador técnico como o número do LID) a variável SAI da
+ * frase — numa mensagem automática, o literal `{{primeiro_nome}}` chegaria ao
+ * cliente, que é o que `interpolateTemplate` faz de propósito no Inbox (lá um
+ * humano vê antes de enviar; aqui ninguém vê).
+ */
+export function personalizarTexto(texto: string, nome: string | null): string {
+  const utilizavel = nome !== null && nome.trim() !== '' && !ehIdentificadorTecnico(nome.trim()) ? nome : null;
+  const interpolado = interpolateTemplate(texto, { name: utilizavel });
+  const semVariavel = interpolado
+    .replace(/[ \t]*\{\{\s*(?:primeiro_nome|nome)\s*\}\}[ \t]*,?/gi, '')
+    .replace(/[ \t]+([!?.,;:])/g, '$1')
+    .trim();
+  if (semVariavel === interpolado.trim()) return semVariavel;
+  // A variável saiu do começo da frase: a 1ª letra que sobrou vira maiúscula.
+  return semVariavel.charAt(0).toLocaleUpperCase('pt-BR') + semVariavel.slice(1);
+}
+
+/**
+ * Copia a mídia do bloco para DENTRO da conversa do lead e devolve o caminho da
+ * cópia. O envio só aceita mídia da própria conversa (`isMediaPathOwnedBy`), e a
+ * remoção por LGPD de um contato apaga pelo caminho — um arquivo compartilhado
+ * entre conversas sumiria para todas.
+ *
+ * O destino é determinístico por (job, seq): o reprocessamento do mesmo job acha
+ * a cópia já feita e segue. A ORIGEM precisa ser da própria organização — o
+ * grafo é editável pela tela, e um caminho de outra org seria copiado com a
+ * chave de serviço.
+ */
+async function copiarMidiaParaConversa(
+  supabase: SupabaseClient,
+  input: { tenantId: string; conversationId: string; jobId: string; seq: number; origem: string },
+): Promise<string> {
+  if (!input.origem.startsWith(`${input.tenantId}/${PASTA_MIDIA_DO_FOLLOWUP}/`)) {
+    throw new Error('mídia do bloco Conteúdo fora da pasta da organização — envio recusado');
+  }
+  const nome = input.origem.slice(input.origem.lastIndexOf('/') + 1);
+  const extensao = nome.includes('.') ? nome.slice(nome.lastIndexOf('.')) : '';
+  const destino = `${input.tenantId}/${input.conversationId}/followup-${input.jobId}-${input.seq}${extensao}`;
+  const { error } = await supabase.storage.from('whatsapp-media').copy(input.origem, destino);
+  if (error && !/exist/i.test(error.message)) {
+    throw new Error(`cópia da mídia do follow-up falhou: ${error.message.slice(0, 120)}`);
+  }
+  return destino;
+}
+
+/**
+ * Envia o bloco Conteúdo: cada texto/mídia é UMA mensagem (seq 1..n, identidade
+ * (job_id, seq) no ledger F2-06 — o reprocessamento não duplica o que já saiu),
+ * cada uma pela cadeia de guardrails inteira (STOP, LGPD, anti-ban, spinning),
+ * como a re-entrada determinística. "Digitando" não é mensagem: acumula e vai
+ * junto da PRÓXIMA como `typingMs`.
+ *
+ * Devolve `null` quando a janela anti-ban fecha antes da 1ª mensagem (o job é
+ * re-agendado e o disparo de lá fecha o passo). Veto no meio da sequência PARA
+ * ali e conta como enviado: o que saiu, saiu, e reagendar reenviaria as
+ * anteriores com outro job_id.
+ */
+async function runFlowContentSend(
+  deps: InboundTurnDeps,
+  job: JobRow,
+  pool: pg.Pool,
+  clock: () => Date,
+  target: ReentrySendTarget,
+  itensBrutos: unknown[],
+): Promise<FollowupFlowTurnResult | null> {
+  const { tenantId, leadId, channelSessionId, conversationId } = target;
+  const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
+  const itens: ItemDoConteudo[] = z.array(itemDoConteudoSchema).min(1).parse(itensBrutos);
+
+  // Instagram: automação só dentro das 24h da última mensagem do cliente. A
+  // etiqueta de atendente humano (7 dias) não cobre disparo automático, e usá-la
+  // assim arrisca a conta. Pula com o motivo registrado — nunca some calado.
+  const { rows: canalRows } = await pool.query<{ plataforma: string | null; last_inbound_at: string | null }>(
+    `select cs.metadata ->> 'plataforma' as plataforma, c.last_inbound_at::text as last_inbound_at
+       from conversations c
+       join channel_sessions cs on cs.id = c.channel_session_id and cs.organization_id = c.organization_id
+      where c.id = $1 and c.organization_id = $2`,
+    [conversationId, tenantId],
+  );
+  const canal = canalRows[0];
+  if (canal?.plataforma === 'instagram') {
+    const ultima = canal.last_inbound_at ? Date.parse(canal.last_inbound_at) : Number.NaN;
+    if (Number.isNaN(ultima) || clock().getTime() - ultima > JANELA_INSTAGRAM_MS) {
+      runLog.info('conteúdo do fluxo pulado — Instagram fora das 24h', {});
+      return { kind: 'skipped', reason: 'instagram_fora_das_24h' };
+    }
+  }
+
+  const camadasDaOrg = await lerCamadasDaOrg(pool, tenantId);
+  const context = await getLeadContext(pool, deps.crmCfg, { tenantId, leadId }, {
+    historyLimit: deps.knobs.historyLimit,
+    maxTokens: deps.knobs.maxContextTokens,
+  });
+  if (!context.ok) {
+    throw new Error(`conteúdo do fluxo falhou em get_lead_context (${context.error.code})`);
+  }
+  const optedOutThisTurn = context.context.contact.is_blocked;
+  const nome = context.context.contact.name;
+  const channel = (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool);
+
+  let seq = 0;
+  let digitandoMs = 0;
+  for (const item of itens) {
+    if (item.kind === 'typing') {
+      digitandoMs += item.seconds * 1000;
+      continue;
+    }
+    seq += 1;
+    const body = item.kind === 'text' ? personalizarTexto(item.text, nome) : '';
+    const media =
+      item.kind === 'media'
+        ? {
+            kind: item.media_kind,
+            storagePath: await copiarMidiaParaConversa(deps.crmCfg.supabase, {
+              tenantId,
+              conversationId,
+              jobId: job.id,
+              seq,
+              origem: item.storage_path,
+            }),
+            mime: item.mime,
+          }
+        : undefined;
+    const typingMs = Math.min(digitandoMs, DIGITANDO_MAX_MS);
+    digitandoMs = 0;
+    const seqDoEnvio = seq;
+
+    const chain = await runBeforeSend({
+      pool,
+      log: runLog,
+      tenantId,
+      leadId,
+      jobId: job.id,
+      channelSessionId,
+      body,
+      optedOutThisTurn,
+      crmDailyLimit: null,
+      now: clock(),
+      sleep: deps.sleep,
+      lgpd: context.lgpd,
+      ...(deps.knobs.disclosureMode !== undefined ? { disclosureMode: deps.knobs.disclosureMode } : {}),
+      ...(camadaLigada(camadasDaOrg.promessa_semantica, deps.knobs.promiseSemantic?.enabled === true)
+        ? {
+            classifyPromiseSemantic: (candidate: string) =>
+              classifyPromise(
+                pool,
+                deps.llmCfg,
+                { tenantId, leadId, jobId: job.id },
+                { candidate, ...(deps.knobs.promiseSemantic?.model !== undefined ? { model: deps.knobs.promiseSemantic.model } : {}) },
+                { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
+              ),
+          }
+        : {}),
+      send: (finalBody) =>
+        channel.send({
+          tenantId,
+          leadId,
+          jobId: job.id,
+          seq: seqDoEnvio,
+          conversationId,
+          body: finalBody,
+          ...(media !== undefined ? { media } : {}),
+          ...(typingMs > 0 ? { typingMs } : {}),
+        }),
+    });
+
+    if (chain.status === 'vetoed') {
+      if (seq === 1 && chain.code === 'outside_window' && chain.nextAllowedAt !== undefined) {
+        await rescheduleReentry(pool, { tenantId, leadId, jobId: job.id, at: chain.nextAllowedAt, payload: job.payload });
+        runLog.info('conteúdo do fluxo re-agendado por janela anti-ban', {
+          next_run_at: chain.nextAllowedAt.toISOString(),
+        });
+        return null;
+      }
+      runLog.info('conteúdo do fluxo interrompido pela cadeia', { code: chain.code, enviadas: seq - 1 });
+      return seq === 1 ? { kind: 'skipped', reason: chain.code } : { kind: 'sent' };
+    }
+
+    const outcome = chain.outcome;
+    switch (outcome.kind) {
+      case 'sent':
+      case 'already_sent':
+      case 'queued':
+        break;
+      case 'blocked':
+        return { kind: 'skipped', reason: 'contato_bloqueado' };
+      case 'failed':
+        throw new Error('conteúdo do fluxo: CRM marcou o envio como failed — run re-tentado pela fila');
+      case 'unavailable':
+        throw new Error(`conteúdo do fluxo: canal indisponível (${outcome.reason}) — run re-tentado pela fila`);
+    }
+  }
+
+  runLog.info('conteúdo do fluxo enviado', { mensagens: seq });
+  return { kind: 'sent' };
 }
 
 /**

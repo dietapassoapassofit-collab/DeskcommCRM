@@ -634,6 +634,7 @@ export async function sendMessageHandler(
           // O id que a PLATAFORMA conhece, lido da linha citada agora — não uma
           // cópia guardada no envio, que poderia divergir da linha.
           replyToExternalId: citada?.external_id ?? null,
+          ...(input.typing_ms !== undefined ? { typingMs: input.typing_ms } : {}),
         }));
       } else if (input.type === "contact") {
         const sc = outboundMetadata.shared_contact as
@@ -672,6 +673,7 @@ export async function sendMessageHandler(
           kind: input.type,
           body: input.body ?? "",
           replyToExternalId: citada?.external_id ?? null,
+          ...(input.typing_ms !== undefined ? { typingMs: input.typing_ms } : {}),
         }));
       }
       await removerEcoDoProprioEnvio(

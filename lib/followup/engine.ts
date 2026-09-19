@@ -13,7 +13,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 
-import { flowGraphSchema, type FlowGraph, type FlowNode } from "./graph-schema";
+import { flowGraphSchema, type ContentItem, type FlowGraph, type FlowNode } from "./graph-schema";
 import {
   ACTION_RECHECK_MS,
   BACKOFF_MS,
@@ -65,6 +65,8 @@ export interface FollowupJobRequest {
      *  intervalo e a orientação de cada uma. O planejador precisa ver a sequência
      *  inteira — decidir bem a 1ª espera e mal a 3ª não é um plano. */
     waits?: EsperaAdaptativa[];
+    /** content: os itens do bloco, na ordem — o turno envia exatamente isto, sem IA. */
+    content?: ContentItem[];
   };
 }
 
@@ -169,6 +171,9 @@ function eventPayload(result: NodeResult): Record<string, unknown> {
 function turnPayloadExtras(node: FlowNode, smartWaits: EsperaAdaptativa[]): Partial<FollowupJobRequest["payload"]> {
   if (node.type === "action" && node.config.mode === "ai_message") {
     return { prompt_hint: node.config.prompt_hint };
+  }
+  if (node.type === "content") {
+    return { content: node.config.items };
   }
   if (node.type === "ai_classify") {
     return { classes: node.config.classes, ...(node.config.hint !== undefined ? { hint: node.config.hint } : {}) };
@@ -400,7 +405,7 @@ async function processEnrollment(deps: TickDeps, enrollment: EnrollmentRow, summ
     planRecheckCount = events.filter((e) => e.node_id === node.id).length;
   }
 
-  if (node.type === "wait" || node.type === "ai_classify" || node.type === "action") {
+  if (node.type === "wait" || node.type === "ai_classify" || node.type === "action" || node.type === "content") {
     const events = await db.loadEnrollmentEvents(enrollment.id);
     // Same prior-step-event check for all three: "did we already act on this node at this
     // occupancy?" — resolveWaitPhase looks for `${node}:${steps_taken - 1}`. For `action`
@@ -416,7 +421,7 @@ async function processEnrollment(deps: TickDeps, enrollment: EnrollmentRow, summ
       const wakeKey = `${node.id}:${enrollment.steps_taken}:wake`;
       wokeEarly = events.some((e) => e.node_id === node.id && e.idempotency_key === wakeKey);
     }
-    if (node.type === "action") {
+    if (node.type === "action" || node.type === "content") {
       actionEnqueued = waitElapsed;
       // Dead-man counter: events on THIS action node (action never enters waiting_reply, so
       // reactivity never writes a `:wake` marker for it — this counts turn_enqueued + recheck).

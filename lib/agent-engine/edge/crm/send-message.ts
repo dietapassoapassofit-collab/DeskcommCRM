@@ -81,7 +81,9 @@ export interface SendMessageInput {
    * Presente = envio de MÍDIA do storage (ver `ChannelSendInput.media`). O caminho
    * entra no hash: o mesmo `body` com outro arquivo é outra intenção.
    */
-  media?: { kind: 'audio' | 'image'; storagePath: string; mime: string };
+  media?: { kind: 'audio' | 'image' | 'video'; storagePath: string; mime: string };
+  /** "digitando…" antes do envio, em ms — repassado ao canal, não entra no hash. */
+  typingMs?: number;
 }
 
 /** Fallback do ator ai_agent quando não há agente publicado (cfg.agentActorId). */
@@ -146,6 +148,7 @@ export async function sendTurnMessage(
               }
             : { type: 'text' as const }),
         body: input.body,
+        ...(input.typingMs !== undefined ? { typing_ms: input.typingMs } : {}),
         metadata: { idempotency_key: idempotencyKey },
       },
     );

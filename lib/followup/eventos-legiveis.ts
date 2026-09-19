@@ -124,6 +124,8 @@ const TIPO_DO_NO: Record<FlowNode["type"], string> = {
   ai_classify: "Interpretação da resposta",
   action: "Mensagem",
   end: "Fim",
+  randomizer: "Randomizador",
+  content: "Conteúdo",
 };
 
 const DESFECHO: Record<string, string> = {
@@ -170,6 +172,12 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
       };
     case "end":
       return { ...base, resumo: `encerra — ${DESFECHO[node.config.outcome] ?? node.config.outcome}` };
+    case "randomizer":
+      return { ...base, resumo: `sorteia entre ${node.config.branches.length} caminhos` };
+    case "content": {
+      const n = node.config.items.filter((i) => i.kind !== "typing").length;
+      return { ...base, resumo: `envia ${n} ${n === 1 ? "mensagem pronta" : "mensagens prontas"}` };
+    }
   }
 }
 

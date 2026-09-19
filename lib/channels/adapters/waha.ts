@@ -36,6 +36,28 @@ export function statusHttpDoErroWaha(msg: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/**
+ * Mostra "digitando…" por `ms` antes de um envio. BEST-EFFORT: presença que o
+ * WAHA recusa vira envio direto — o cliente prefere a mensagem sem o gesto a
+ * ficar sem a mensagem. Devolve se a presença chegou a aparecer, para quem
+ * chama limpar caso o envio falhe depois (senão o chat fica "digitando" até o
+ * WhatsApp expirar sozinho, anunciando uma resposta que não vem).
+ */
+async function mostrarDigitando(
+  client: NonNullable<ReturnType<typeof getWahaClient>>,
+  envelope: OutboundEnvelope,
+  ms: number,
+): Promise<boolean> {
+  if (ms <= 0) return false;
+  try {
+    await client.startTyping(envelope.sessionRef, envelope.to);
+  } catch {
+    return false;
+  }
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  return true;
+}
+
 export const wahaAdapter: ChannelAdapter = {
   provider: "waha",
 
@@ -195,11 +217,19 @@ export const wahaAdapter: ChannelAdapter = {
       );
       res = await client.sendContactVcard(envelope.sessionRef, envelope.to, [contact]);
     } else if (envelope.media) {
-      res = await client.sendMedia(
-        envelope.sessionRef,
-        envelope.to,
-        wahaSendPlanFor(envelope.kind, envelope.media),
-      );
+      // Mídia só ganha "digitando…" quando pedido explicitamente (bloco Conteúdo
+      // do follow-up) — o envio manual pelo Inbox segue como sempre foi.
+      const digitou = await mostrarDigitando(client, envelope, envelope.typingMs ?? 0);
+      try {
+        res = await client.sendMedia(
+          envelope.sessionRef,
+          envelope.to,
+          wahaSendPlanFor(envelope.kind, envelope.media),
+        );
+      } catch (err) {
+        if (digitou) await client.stopTyping(envelope.sessionRef, envelope.to).catch(() => {});
+        throw err;
+      }
     } else {
       const corpo = envelope.body ?? "";
       // "digitando..." antes da bolha. BEST-EFFORT E NADA MAIS: o try/catch é a
@@ -207,17 +237,7 @@ export const wahaAdapter: ChannelAdapter = {
       // muito receber a mensagem sem o gesto a não receber. Por isso a espera
       // também só acontece depois de o start ter dado certo: dormir 2s para
       // então enviar sem nunca ter mostrado presença é latência pura.
-      let digitou = false;
-      const esperaMs = typingDelayMs(corpo);
-      if (esperaMs > 0) {
-        try {
-          await client.startTyping(envelope.sessionRef, envelope.to);
-          digitou = true;
-          await new Promise((resolve) => setTimeout(resolve, esperaMs));
-        } catch {
-          // presença indisponível — segue direto para o envio
-        }
-      }
+      const digitou = await mostrarDigitando(client, envelope, envelope.typingMs ?? typingDelayMs(corpo));
       try {
         res = await client.sendMessage(
           envelope.sessionRef,

@@ -70,6 +70,8 @@ export const sendMessageSchema = z
      * o vocabulário do canal, que é justamente o que o seam existe para evitar.
      */
     reply_to_message_id: z.string().uuid().optional(),
+    /** "digitando…" antes do envio, em ms (bloco Conteúdo do follow-up). Teto de 20s. */
+    typing_ms: z.number().int().min(0).max(20_000).optional(),
   })
   .refine(
     (d) => {

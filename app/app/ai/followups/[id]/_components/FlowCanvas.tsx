@@ -51,6 +51,8 @@ import { ConditionNode } from "./nodes/ConditionNode";
 import { ClassifyNode } from "./nodes/ClassifyNode";
 import { ActionNode } from "./nodes/ActionNode";
 import { EndNode } from "./nodes/EndNode";
+import { RandomizerNode } from "./nodes/RandomizerNode";
+import { ContentNode } from "./nodes/ContentNode";
 
 const EMPTY_GRAPH: FlowGraph = { nodes: [], edges: [] };
 const DND_MIME = "application/x-followup-node-type";
@@ -64,6 +66,8 @@ const nodeTypes: NodeTypes = {
   ai_classify: ClassifyNode,
   action: ActionNode,
   end: EndNode,
+  randomizer: RandomizerNode,
+  content: ContentNode,
 };
 
 interface Props {

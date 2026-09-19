@@ -12,6 +12,8 @@ export const NODE_TYPES = [
   'ai_classify',
   'action',
   'end',
+  'randomizer',
+  'content',
 ] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
 
@@ -158,6 +160,75 @@ export const actionConfigSchema = z.discriminatedUnion('mode', [
 ]);
 
 /**
+ * Randomizador — sorteia UM caminho por lead, com o peso que o operador deu.
+ *
+ * O sorteio é determinístico por enrollment (`escolherCaminho` em
+ * node-handlers): reprocessar o mesmo passo depois de uma falha cai no mesmo
+ * caminho, e o lead nunca recebe duas versões da mesma mensagem.
+ */
+export const randomizerBranchSchema = z.strictObject({
+  id: declaredBranchIdSchema,
+  label: z.string().min(1).max(40),
+  weight: z.number().int().min(1).max(100),
+});
+
+export type RandomizerBranch = z.infer<typeof randomizerBranchSchema>;
+
+export const randomizerConfigSchema = z
+  .strictObject({
+    branches: z.array(randomizerBranchSchema).min(2).max(5),
+  })
+  .refine((c) => new Set(c.branches.map((b) => b.id)).size === c.branches.length, {
+    message: 'branches[].id must be unique within the node',
+    path: ['branches'],
+  })
+  .refine((c) => c.branches.reduce((s, b) => s + b.weight, 0) === 100, {
+    message: 'os pesos dos caminhos precisam somar 100%',
+    path: ['branches'],
+  });
+
+/**
+ * Pasta do bucket onde mora a mídia de um bloco Conteúdo:
+ * `<org>/followup-media/<arquivo>`. Na hora do envio o arquivo é COPIADO para
+ * dentro da conversa do lead — o envio só aceita mídia da própria conversa, e a
+ * remoção por LGPD de um contato apaga pelo caminho: arquivo compartilhado
+ * sumiria para todos.
+ */
+export const FOLLOWUP_MEDIA_FOLDER = 'followup-media';
+
+/** Um item do bloco Conteúdo, na ordem em que sai. */
+export const contentItemSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('text'),
+    text: z.string().trim().min(1).max(4000),
+  }),
+  z.strictObject({
+    kind: z.literal('media'),
+    media_kind: z.enum(['image', 'video']),
+    storage_path: z.string().min(1).max(500),
+    mime: z.string().min(1).max(100),
+    filename: z.string().max(200).optional(),
+    size_bytes: z.number().int().positive().optional(),
+  }),
+  // "digitando…" mostrado ANTES da próxima mensagem, pelo tempo escolhido.
+  z.strictObject({
+    kind: z.literal('typing'),
+    seconds: z.number().int().min(1).max(20),
+  }),
+]);
+
+export type ContentItem = z.infer<typeof contentItemSchema>;
+
+export const contentConfigSchema = z
+  .strictObject({
+    items: z.array(contentItemSchema).min(1).max(10),
+  })
+  .refine((c) => c.items.some((i) => i.kind !== 'typing'), {
+    message: 'o bloco precisa de pelo menos um texto ou uma mídia',
+    path: ['items'],
+  });
+
+/**
  * One rule of a `condition` node. In `branching: 'per_check'` it IS a branch,
  * so it carries the stable id an edge references and the label the handle shows
  * — identity lives on the rule itself, never in a parallel array that would
@@ -285,6 +356,28 @@ export const flowNodeSchema = z.discriminatedUnion('type', [
       y: z.number(),
     }),
     config: endConfigSchema,
+  }),
+  // Randomizer node: sorteia um caminho por lead
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('randomizer'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: randomizerConfigSchema,
+  }),
+  // Content node: sequência de mensagens prontas (texto, mídia, digitando)
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('content'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: contentConfigSchema,
   }),
 ]);
 
@@ -481,6 +574,18 @@ export function nodeBranches(node: BranchableNode): FlowBranch[] {
         fallbackBranch(FALLBACK_ALWAYS_LABEL),
       ];
     }
+
+    case 'randomizer':
+      // Sem saída de escape desenhada: o sorteio sempre cai num caminho
+      // declarado, e a validação de publicação exige cada um ligado. Se um
+      // caminho ficar solto mesmo assim, `selectEdge` ainda tenta o `always`.
+      return node.config.branches.map((b) => ({
+        id: b.id,
+        label: `${b.label} · ${b.weight}%`,
+        check: null,
+        kind: 'match' as const,
+        condition: { type: 'branch' as const, branch_id: b.id },
+      }));
 
     default:
       return [fallbackBranch(FALLBACK_ALWAYS_LABEL)];

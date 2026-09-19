@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 
-import { Play, Clock, GitBranch, Brain, PaperPlaneTilt, Flag } from "@/lib/ui/icons";
+import { Play, Clock, GitBranch, Brain, PaperPlaneTilt, Flag, Shuffle, ChatText } from "@/lib/ui/icons";
 import type { FlowNode, NodeType } from "@/lib/followup/graph-schema";
 import { RESULTADOS_DO_FIM } from "@/lib/followup/vocabulario";
 
@@ -86,6 +86,36 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
     defaultLabel: "Fim do fluxo",
     defaultConfig: () => ({ outcome: "exhausted" }),
   },
+  // Mesmo par de cores da Condição (ramifica) e da Ação (envia): a cor diz o
+  // PAPEL do bloco no fluxo, e o ícone diz qual é.
+  randomizer: {
+    type: "randomizer",
+    paletteLabel: "Randomizador",
+    icon: Shuffle,
+    chipClassName: "bg-warning-bg text-warning-fg",
+    borderClassName: "border-l-warning",
+    defaultLabel: "Sortear versão",
+    defaultConfig: () => ({
+      branches: [
+        { id: "caminho-1", label: "A", weight: 50 },
+        { id: "caminho-2", label: "B", weight: 50 },
+      ],
+    }),
+  },
+  content: {
+    type: "content",
+    paletteLabel: "Conteúdo",
+    icon: ChatText,
+    chipClassName: "bg-success-bg text-success-fg",
+    borderClassName: "border-l-success",
+    defaultLabel: "Mensagens prontas",
+    defaultConfig: () => ({
+      items: [
+        { kind: "typing", seconds: 3 },
+        { kind: "text", text: "Oi {{primeiro_nome}}!" },
+      ],
+    }),
+  },
 };
 
 export const NODE_VISUAL_LIST = Object.values(NODE_VISUALS);
@@ -126,6 +156,17 @@ export function describeNodeConfig(type: NodeType, config: FlowNode["config"]): 
     case "end": {
       const c = config as ConfigOf<"end">;
       return RESULTADOS_DO_FIM[c.outcome];
+    }
+    case "randomizer": {
+      const c = config as ConfigOf<"randomizer">;
+      return c.branches.map((b) => `${b.label} ${b.weight}%`).join(" · ");
+    }
+    case "content": {
+      const c = config as ConfigOf<"content">;
+      const mensagens = c.items.filter((i) => i.kind !== "typing");
+      const primeiroTexto = c.items.find((i) => i.kind === "text");
+      const quantas = `${mensagens.length} ${mensagens.length === 1 ? "mensagem" : "mensagens"}`;
+      return primeiroTexto && primeiroTexto.kind === "text" ? `${quantas} · ${primeiroTexto.text}` : quantas;
     }
     default: {
       const exhaustive: never = type;

@@ -350,6 +350,13 @@ export function validateFlowForPublish(graph: FlowGraph): PublishValidationResul
     cobrirRamos(node, outgoing, errors);
   }
 
+  // Randomizador: todo caminho sorteável precisa levar a algum lugar — um lead
+  // sorteado para um caminho solto ficaria parado no nó.
+  for (const node of [...nodes].sort(byId)) {
+    if (node.type !== 'randomizer') continue;
+    cobrirRamos(node, outEdges.get(node.id) ?? [], errors);
+  }
+
   for (const node of [...nodes].sort(byId)) {
     if (node.type !== 'ai_classify') continue;
     const outgoing = outEdges.get(node.id) ?? [];
