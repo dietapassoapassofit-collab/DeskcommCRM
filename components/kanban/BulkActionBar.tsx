@@ -19,15 +19,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useUser } from "@/hooks/auth/AuthProvider";
+import { useUser, usePermission } from "@/hooks/auth/AuthProvider";
 import { useBulkAction } from "@/hooks/kanban/useBulkAction";
 import type { Stage } from "@/lib/kanban/types";
+import type { Lead } from "@/lib/types/leads";
+import { FollowupEmMassaDialog } from "./FollowupEmMassaDialog";
 
 interface BulkActionBarProps {
   selectedIds: string[];
   stages: Stage[];
   pipelineId: string;
   onClear: () => void;
+  /** Os negócios do quadro — o follow-up é por CONTATO, e o contato vem do negócio. */
+  leads?: Lead[];
 }
 
 export function BulkActionBar({
@@ -35,9 +39,18 @@ export function BulkActionBar({
   stages,
   pipelineId,
   onClear,
+  leads = [],
 }: BulkActionBarProps) {
   const user = useUser();
   const bulk = useBulkAction(pipelineId);
+  const podeFollowup = usePermission("ai.followups.enroll");
+  const [followupAberto, setFollowupAberto] = useState(false);
+
+  // Um contato pode ter mais de um negócio selecionado; o follow-up é um por
+  // contato, então repetir só geraria conflito 409.
+  const selecionados = leads.filter((l) => selectedIds.includes(l.id));
+  const contatos = [...new Set(selecionados.flatMap((l) => (l.contact_id ? [l.contact_id] : [])))];
+  const semContato = selecionados.filter((l) => !l.contact_id).length;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [tagInput, setTagInput] = useState("");
 
@@ -182,6 +195,17 @@ export function BulkActionBar({
           </DropdownMenuContent>
         </DropdownMenu>
 
+        {podeFollowup && contatos.length > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setFollowupAberto(true)}
+            disabled={bulk.isPending}
+          >
+            Follow-up…
+          </Button>
+        )}
+
         <Button
           size="sm"
           variant="destructive"
@@ -195,6 +219,14 @@ export function BulkActionBar({
           Cancelar
         </Button>
       </div>
+
+      <FollowupEmMassaDialog
+        aberto={followupAberto}
+        onOpenChange={setFollowupAberto}
+        contatos={contatos}
+        semContato={semContato}
+        onConcluido={onClear}
+      />
 
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent>

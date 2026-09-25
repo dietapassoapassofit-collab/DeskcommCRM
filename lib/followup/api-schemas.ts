@@ -73,4 +73,13 @@ export const createFollowupEnrollmentSchema = z.strictObject({
   // Botão "Follow-up" da conversa: tira o lead do atendimento humano (force_human +
   // bot_silenced_until) para o fluxo conseguir enviar. Não mexe em quem está atribuído.
   release_handoff: z.boolean().optional(),
+  /**
+   * Daqui a quantos minutos este lead começa o fluxo. Existe para o disparo em
+   * massa do funil: inscrever 20 leads no mesmo instante faria 20 mensagens
+   * saírem juntas, e a trava de repetição vetaria da terceira em diante. Com o
+   * começo escalonado, cada uma sai no seu tempo e todas chegam.
+   *
+   * Teto de 24h: mais que isso é agendamento, e agendamento tem tela própria.
+   */
+  start_in_minutes: z.number().int().min(0).max(1440).optional(),
 });

@@ -137,7 +137,7 @@ export function useFollowupDoContato(contactId: string | null, enabled = true) {
 export function useColocarNoFollowup() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (args: { pointer_id: string; contact_id: string }) => {
+    mutationFn: async (args: { pointer_id: string; contact_id: string; start_in_minutes?: number }) => {
       const res = await apiClient.post<{ data: EnrollmentDoContato }>("/api/v1/ai/followups/enrollments", {
         ...args,
         release_handoff: true,

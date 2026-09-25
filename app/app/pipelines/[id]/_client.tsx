@@ -120,6 +120,7 @@ export function PipelinePageClient({
         stages={data?.stages ?? []}
         pipelineId={pipelineId}
         onClear={() => setSelectedIds([])}
+        leads={filteredLeads}
       />
     </div>
   );

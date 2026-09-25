@@ -84,7 +84,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       details: parsed.error.flatten(),
     });
   }
-  const { pointer_id, contact_id, agent_id: agentIdInput, release_handoff } = parsed.data;
+  const { pointer_id, contact_id, agent_id: agentIdInput, release_handoff, start_in_minutes } = parsed.data;
 
   const supabase = await createClient();
 
@@ -157,7 +157,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       contact_id,
       current_node_id: triggerNode.id,
       status: "active",
-      next_eval_at: now,
+      // O motor só olha o enrollment quando `next_eval_at` vence — é assim que o
+      // disparo em massa do funil espaça os envios sem fila própria.
+      next_eval_at:
+        start_in_minutes === undefined || start_in_minutes === 0
+          ? now
+          : new Date(Date.now() + start_in_minutes * 60_000).toISOString(),
       agent_id: agentId,
     })
     .select(LIST_COLUMNS)

@@ -154,3 +154,15 @@ describe("personalizarTexto — nome do cliente em mensagem automática", () => 
     expect(personalizarTexto("kkk combinado", "Ana")).toBe("kkk combinado");
   });
 });
+
+describe("inscrição em massa pelo funil — espaçamento", () => {
+  it("aceita começar daqui a N minutos, e recusa acima de 24h", async () => {
+    const { createFollowupEnrollmentSchema } = await import("@/lib/followup/api-schemas");
+    const base = { pointer_id: crypto.randomUUID(), contact_id: crypto.randomUUID() };
+    expect(createFollowupEnrollmentSchema.safeParse({ ...base }).success).toBe(true);
+    expect(createFollowupEnrollmentSchema.safeParse({ ...base, start_in_minutes: 0 }).success).toBe(true);
+    expect(createFollowupEnrollmentSchema.safeParse({ ...base, start_in_minutes: 144 }).success).toBe(true);
+    expect(createFollowupEnrollmentSchema.safeParse({ ...base, start_in_minutes: 1441 }).success).toBe(false);
+    expect(createFollowupEnrollmentSchema.safeParse({ ...base, start_in_minutes: -1 }).success).toBe(false);
+  });
+});
