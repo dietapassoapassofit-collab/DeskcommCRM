@@ -33,6 +33,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Clock, MagnifyingGlass, Trash } from "@/lib/ui/icons";
+import { usePausarOuRetomarFluxo } from "@/hooks/followup/useFollowupQueue";
 import { rotuloDoStatus, tomDoStatus } from "@/lib/followup/eventos-legiveis";
 import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
 import {
@@ -123,6 +124,7 @@ export function QueueTab({ canWrite }: Props) {
     [status, pointerId, q],
   );
   const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = useFollowupQueue(filters);
+  const fluxoInteiro = usePausarOuRetomarFluxo();
   const cancelEnrollment = useCancelFollowupEnrollment();
   const cancelPromise = useCancelFollowupPromise();
 
@@ -173,6 +175,30 @@ export function QueueTab({ canWrite }: Props) {
             ))}
           </SelectContent>
         </Select>
+
+        {/* Pausar e retomar o fluxo INTEIRO: é o controle de um disparo em massa
+            já em andamento. Só aparece com um fluxo escolhido — "todos os fluxos"
+            pausaria coisas que o operador nem está olhando. */}
+        {pointerId !== "all" && (
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={fluxoInteiro.isPending}
+              onClick={() => fluxoInteiro.mutate({ pointerId, acao: "pause" })}
+            >
+              Pausar disparo
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={fluxoInteiro.isPending}
+              onClick={() => fluxoInteiro.mutate({ pointerId, acao: "resume" })}
+            >
+              Retomar
+            </Button>
+          </div>
+        )}
       </div>
 
       {!isLoading && rows.length === 0 ? (

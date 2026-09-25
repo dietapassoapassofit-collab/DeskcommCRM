@@ -161,6 +161,17 @@ export function KanbanBoard({
     [onSelectionChange, selectedLeadIds],
   );
 
+  /** Marca a coluna inteira, somando à seleção que já existe — é assim que o
+   *  lojista dispara uma coluna de produto sem clicar card a card. */
+  const handleSelectAll = useCallback(
+    (leadIds: string[]) => {
+      const juntar = (prev: Set<string>): Set<string> => new Set([...prev, ...leadIds]);
+      if (onSelectionChange) onSelectionChange(Array.from(juntar(selectedLeadIds)));
+      else setInternalSelected((prev) => juntar(prev));
+    },
+    [onSelectionChange, selectedLeadIds],
+  );
+
   const handleDragEnd = useCallback(
     (result: DropResult) => {
       if (!data || !grouped) return;
@@ -246,6 +257,7 @@ export function KanbanBoard({
             canonicalTags={canonicalTags}
             selectedLeadIds={selectedLeadIds}
             onSelect={handleSelect}
+            onSelectAll={handleSelectAll}
             onOpen={setDossieId}
           />
         ))}

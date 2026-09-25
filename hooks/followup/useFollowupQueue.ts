@@ -49,6 +49,27 @@ interface ListResponse {
 
 const QUEUE_LIMIT = 20;
 
+/** Pausa ou retoma TODO o fluxo — o "parar e dar play" de um disparo em massa. */
+export function usePausarOuRetomarFluxo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ pointerId, acao }: { pointerId: string; acao: "pause" | "resume" }) => {
+      const res = await apiClient.post<{ data: { feitos: number; falhas: number; alcance: number } }>(
+        `/api/v1/ai/followup-flows/${pointerId}/enrollments`,
+        { acao },
+      );
+      return { ...res.data, acao };
+    },
+    onSuccess: (d) => {
+      void qc.invalidateQueries({ queryKey: ["followup", "queue"] });
+      const verbo = d.acao === "pause" ? "pausado" : "retomado";
+      if (d.alcance === 0) toast.info(d.acao === "pause" ? "Nenhum lead andando neste fluxo." : "Nenhum lead pausado neste fluxo.");
+      else toast.success(`${d.feitos} lead${d.feitos === 1 ? "" : "s"} ${verbo}${d.feitos === 1 ? "" : "s"}${d.falhas ? ` · ${d.falhas} falhou` : ""}.`);
+    },
+    onError: (err) => showApiError(err),
+  });
+}
+
 export const followupQueueQueryKey = (filters: FollowupQueueFilters) =>
   ["followup", "queue", filters] as const;
 

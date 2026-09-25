@@ -230,6 +230,11 @@ export const AUDIT_ACTIONS = [
   "followup_enrollment.resumed",
   "followup_enrollment.snoozed",
   "followup_enrollment.step_skipped",
+  // O mesmo par, aplicado ao FLUXO inteiro (o "parar e dar play" de um disparo
+  // em massa). Separado das ações por lead: o alcance é outro, e quem audita
+  // precisa distinguir "segurou um lead" de "segurou a coluna inteira".
+  "followup_flow.enrollments_paused",
+  "followup_flow.enrollments_resumed",
   "template.created",
   "template.updated",
   "template.deleted",
