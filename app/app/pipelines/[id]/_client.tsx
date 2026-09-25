@@ -95,6 +95,13 @@ export function PipelinePageClient({
         />
       )}
       <FilterBar filters={filters} onChange={setFilters} leads={data?.leads ?? []} />
+      <BulkActionBar
+        selectedIds={selectedIds}
+        stages={data?.stages ?? []}
+        pipelineId={pipelineId}
+        onClear={() => setSelectedIds([])}
+        leads={filteredLeads}
+      />
       {error ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm">
           Não consegui carregar este funil:{" "}
@@ -115,13 +122,6 @@ export function PipelinePageClient({
           onSelectionChange={setSelectedIds}
         />
       )}
-      <BulkActionBar
-        selectedIds={selectedIds}
-        stages={data?.stages ?? []}
-        pipelineId={pipelineId}
-        onClear={() => setSelectedIds([])}
-        leads={filteredLeads}
-      />
     </div>
   );
 }

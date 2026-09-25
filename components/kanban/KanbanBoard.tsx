@@ -161,13 +161,20 @@ export function KanbanBoard({
     [onSelectionChange, selectedLeadIds],
   );
 
-  /** Marca a coluna inteira, somando à seleção que já existe — é assim que o
-   *  lojista dispara uma coluna de produto sem clicar card a card. */
+  /** Marca (ou desmarca) a coluna inteira, preservando a seleção das outras — é
+   *  assim que o lojista dispara uma coluna de produto sem clicar card a card. */
   const handleSelectAll = useCallback(
-    (leadIds: string[]) => {
-      const juntar = (prev: Set<string>): Set<string> => new Set([...prev, ...leadIds]);
-      if (onSelectionChange) onSelectionChange(Array.from(juntar(selectedLeadIds)));
-      else setInternalSelected((prev) => juntar(prev));
+    (leadIds: string[], marcar: boolean) => {
+      const aplicar = (prev: Set<string>): Set<string> => {
+        const next = new Set(prev);
+        for (const id of leadIds) {
+          if (marcar) next.add(id);
+          else next.delete(id);
+        }
+        return next;
+      };
+      if (onSelectionChange) onSelectionChange(Array.from(aplicar(selectedLeadIds)));
+      else setInternalSelected((prev) => aplicar(prev));
     },
     [onSelectionChange, selectedLeadIds],
   );

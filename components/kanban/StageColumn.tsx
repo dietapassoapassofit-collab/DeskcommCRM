@@ -23,8 +23,9 @@ interface StageColumnProps {
   /** leadId → quantos eventos remotos já chegaram (muda = pulsa de novo). */
   pulses?: Map<string, number>;
   onSelect?: (leadId: string, additive: boolean) => void;
-  /** Marca todos os negócios desta coluna — o caminho para disparar a coluna inteira. */
-  onSelectAll?: (leadIds: string[]) => void;
+  /** Marca ou desmarca todos os negócios desta coluna — o caminho para disparar
+   *  a coluna inteira, e para desistir dela sem limpar a seleção das outras. */
+  onSelectAll?: (leadIds: string[], marcar: boolean) => void;
   /** Abrir o dossiê — atravessa o board até o card, como `pulses`. */
   onOpen?: (leadId: string) => void;
 }
@@ -74,16 +75,25 @@ export function StageColumn({
         <h2 className="flex-1 truncate text-sm font-semibold text-text">
           {stage.name}
         </h2>
-        {onSelectAll && leads.length > 0 && (
-          <button
-            type="button"
-            onClick={() => onSelectAll(leads.map((l) => l.id))}
-            className="rounded px-1.5 py-0.5 text-[11px] font-medium text-text-muted hover:bg-surface hover:text-text"
-            title={`Selecionar os ${leads.length} desta coluna`}
-          >
-            Selecionar todos
-          </button>
-        )}
+        {onSelectAll && leads.length > 0 && (() => {
+          // O MESMO botão desmarca quando a coluna inteira já está marcada:
+          // marcar sem poder desmarcar obriga a limpar tudo e recomeçar.
+          const todosMarcados = leads.every((l) => selectedLeadIds?.has(l.id));
+          return (
+            <button
+              type="button"
+              onClick={() => onSelectAll(leads.map((l) => l.id), !todosMarcados)}
+              className="rounded px-1.5 py-0.5 text-[11px] font-medium text-text-muted hover:bg-surface hover:text-text"
+              title={
+                todosMarcados
+                  ? `Desmarcar os ${leads.length} desta coluna`
+                  : `Selecionar os ${leads.length} desta coluna`
+              }
+            >
+              {todosMarcados ? "Desmarcar todos" : "Selecionar todos"}
+            </button>
+          );
+        })()}
         <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium tabular-nums text-text-muted">
           {leads.length}
         </span>
