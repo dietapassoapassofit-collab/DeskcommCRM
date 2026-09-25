@@ -64,12 +64,23 @@ export function normalizaTelefone(bruto: string | null | undefined): string | nu
   return digitos.length <= 11 ? `55${digitos}` : digitos;
 }
 
-export interface VendaFechada {
-  /** Id do negócio no CRM. Vira `event_id` — é o que impede evento duplicado no Meta. */
+/**
+ * O que aconteceu no funil, na língua do Meta.
+ *
+ * `lead` é o cliente que o vendedor classificou numa coluna de produto — parou
+ * de ser "quem respondeu a mensagem" e virou interesse declarado. `venda` é o
+ * negócio ganho. Os dois vão para o mesmo dataset porque o Meta só aprende com
+ * volume: venda são oito por mês, lead qualificado são setenta.
+ */
+export type TipoDeFato = "lead" | "venda";
+
+export interface FatoDoFunil {
+  tipo: TipoDeFato;
+  /** Id do negócio no CRM. Compõe o `event_id` — é o que impede evento duplicado no Meta. */
   leadId: string;
   valorCentavos: number | null;
   moeda: string | null;
-  fechadaEm: Date;
+  aconteceuEm: Date;
   /** Id do clique no anúncio, quando o contato veio de um. */
   ctwaClid: string | null;
   telefone: string | null;
@@ -77,7 +88,7 @@ export interface VendaFechada {
 }
 
 export interface EventoDeConversao {
-  event_name: "Purchase";
+  event_name: "Purchase" | "Lead";
   event_id: string;
   event_time: number;
   action_source: string;
@@ -96,32 +107,35 @@ export interface EventoDeConversao {
  * credita o anúncio.
  */
 export function montaEvento(
-  venda: VendaFechada,
+  fato: FatoDoFunil,
   cred: CredenciaisDeConversao,
 ): EventoDeConversao | null {
   const userData: Record<string, string> = {};
-  if (venda.ctwaClid) {
-    userData.ctwa_clid = venda.ctwaClid;
+  if (fato.ctwaClid) {
+    userData.ctwa_clid = fato.ctwaClid;
     userData.whatsapp_business_account_id = cred.wabaId;
   }
-  const telefone = normalizaTelefone(venda.telefone);
+  const telefone = normalizaTelefone(fato.telefone);
   if (telefone) userData.ph = hash(telefone);
-  const email = (venda.email ?? "").trim().toLowerCase();
+  const email = (fato.email ?? "").trim().toLowerCase();
   if (email) userData.em = hash(email);
   if (Object.keys(userData).length === 0) return null;
 
   const evento: EventoDeConversao = {
-    event_name: "Purchase",
-    event_id: venda.leadId,
-    event_time: Math.floor(venda.fechadaEm.getTime() / 1000),
-    action_source: venda.ctwaClid ? "business_messaging" : "other",
+    event_name: fato.tipo === "venda" ? "Purchase" : "Lead",
+    // O sufixo separa os dois eventos do MESMO negócio: sem ele, o `Lead` e o
+    // `Purchase` do mesmo cliente teriam o mesmo id e o Meta descartaria o
+    // segundo como repetição.
+    event_id: fato.tipo === "venda" ? fato.leadId : `${fato.leadId}-lead`,
+    event_time: Math.floor(fato.aconteceuEm.getTime() / 1000),
+    action_source: fato.ctwaClid ? "business_messaging" : "other",
     user_data: userData,
   };
-  if (venda.ctwaClid) evento.messaging_channel = "whatsapp";
-  if (venda.valorCentavos && venda.valorCentavos > 0) {
+  if (fato.ctwaClid) evento.messaging_channel = "whatsapp";
+  if (fato.tipo === "venda" && fato.valorCentavos && fato.valorCentavos > 0) {
     evento.custom_data = {
-      currency: venda.moeda || "BRL",
-      value: venda.valorCentavos / 100,
+      currency: fato.moeda || "BRL",
+      value: fato.valorCentavos / 100,
     };
   }
   return evento;

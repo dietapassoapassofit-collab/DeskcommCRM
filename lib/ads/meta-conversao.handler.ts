@@ -2,12 +2,17 @@
  * Liga `lib/ads/meta-conversao.ts` no dispatcher do `event_log`, ouvindo a
  * mudança de etapa do negócio.
  *
- * Por que aqui e não dentro de `encerraDemanda`: o negócio vira ganho por
- * caminhos diferentes — botão de encerrar, card arrastado para a etapa de
- * ganho, a IA, a API. Todos passam pelo mesmo `lead.stage_changed`, e o
- * dispatcher já garante uma entrega por handler (`consumed_by`), que é
- * exatamente a idempotência que um evento de compra precisa. Pendurar o envio
- * em cada caminho daria envio duplicado num e envio nenhum no outro.
+ * Por que aqui e não dentro de `encerraDemanda`: o negócio anda no funil por
+ * caminhos diferentes — botão, card arrastado, IA, API. Todos passam pelo mesmo
+ * `lead.stage_changed`, e o dispatcher já garante uma entrega por handler
+ * (`consumed_by`), que é exatamente a idempotência que um evento de conversão
+ * precisa. Pendurar o envio em cada caminho daria envio duplicado num e envio
+ * nenhum no outro.
+ *
+ * DOIS FATOS SOBEM, não um. Venda são oito por mês; sozinha, ela não ensina
+ * nada a quem otimiza por volume. O lead qualificado — o cliente que o vendedor
+ * tirou da caixa de entrada e classificou numa coluna de produto — são setenta
+ * por mês, e é o sinal que separa "respondeu a mensagem" de "quer comprar".
  */
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -15,7 +20,8 @@ import {
   credenciaisDaOrg,
   enviaConversao,
   montaEvento,
-  type VendaFechada,
+  type FatoDoFunil,
+  type TipoDeFato,
 } from "@/lib/ads/meta-conversao";
 
 export const META_CONVERSAO_HANDLER_KEY = "meta-conversao.v1";
@@ -29,6 +35,44 @@ const pulado = (detail: string): HandlerResult => ({
   detail,
 });
 
+interface Etapa {
+  id: string;
+  position: number;
+  is_won: boolean;
+  is_lost: boolean;
+  is_archived: boolean;
+}
+
+/**
+ * O que a chegada nesta etapa significa para o Meta.
+ *
+ * A regra não tem lista de nomes de etapa de propósito: nome muda, o cliente
+ * cria coluna nova, e uma lista desatualizada silenciaria o envio sem ninguém
+ * perceber. O que vale é a POSIÇÃO — a primeira etapa é a caixa de entrada, por
+ * onde todo mundo passa, então chegar nela não qualifica ninguém. Qualificar é
+ * SAIR dela: alguém leu a conversa e decidiu que aquilo é um lead de verdade.
+ */
+export function fatoDaEtapa(
+  etapas: Etapa[],
+  destinoId: string,
+  origemId: string | null,
+): TipoDeFato | null {
+  const destino = etapas.find((e) => e.id === destinoId);
+  if (!destino) return null;
+  if (destino.is_won) return "venda";
+  if (destino.is_lost) return null;
+
+  const vivas = etapas.filter((e) => !e.is_archived && !e.is_won && !e.is_lost);
+  const entrada = vivas.reduce<Etapa | null>(
+    (menor, e) => (menor === null || e.position < menor.position ? e : menor),
+    null,
+  );
+  if (!entrada || destino.id === entrada.id) return null;
+  // Só a saída da caixa de entrada vale. Andar entre colunas de produto depois
+  // é o vendedor corrigindo a classificação, não um lead novo.
+  return origemId === entrada.id ? "lead" : null;
+}
+
 export const metaConversaoHandler: EventHandler = {
   key: META_CONVERSAO_HANDLER_KEY,
   events: ["lead.stage_changed"],
@@ -41,13 +85,26 @@ export const metaConversaoHandler: EventHandler = {
     try {
       const admin = createAdminClient();
 
-      const { data: etapa } = await admin
+      const { data: destino } = await admin
         .from("crm_stages")
-        .select("is_won")
+        .select("id, pipeline_id")
         .eq("id", etapaDestino)
         .eq("organization_id", row.organization_id)
         .maybeSingle();
-      if (!etapa?.is_won) return pulado("etapa não é de ganho");
+      if (!destino) return pulado("etapa não encontrada");
+
+      const { data: etapas } = await admin
+        .from("crm_stages")
+        .select("id, position, is_won, is_lost, is_archived")
+        .eq("pipeline_id", destino.pipeline_id)
+        .eq("organization_id", row.organization_id);
+
+      const tipo = fatoDaEtapa(
+        (etapas ?? []) as Etapa[],
+        etapaDestino,
+        texto(row.payload.from_stage_id),
+      );
+      if (!tipo) return pulado("mudança de etapa que não vira conversão");
 
       const { data: org } = await admin
         .from("organizations")
@@ -59,7 +116,7 @@ export const metaConversaoHandler: EventHandler = {
 
       const { data: lead } = await admin
         .from("crm_leads")
-        .select("id, value_cents, currency, closed_at, contact_id, updated_at")
+        .select("id, value_cents, currency, closed_at, contact_id")
         .eq("id", leadId)
         .eq("organization_id", row.organization_id)
         .maybeSingle();
@@ -88,17 +145,22 @@ export const metaConversaoHandler: EventHandler = {
         email = texto(contato?.email ?? null);
       }
 
-      const venda: VendaFechada = {
+      const fato: FatoDoFunil = {
+        tipo,
         leadId: lead.id,
         valorCentavos: lead.value_cents,
         moeda: lead.currency,
-        fechadaEm: new Date(lead.closed_at ?? row.created_at ?? Date.now()),
+        // Venda tem hora própria (`closed_at`); lead qualificado acontece no
+        // instante em que a etapa mudou, que é a hora do evento.
+        aconteceuEm: new Date(
+          (tipo === "venda" ? lead.closed_at : null) ?? row.created_at ?? Date.now(),
+        ),
         ctwaClid,
         telefone,
         email,
       };
 
-      const evento = montaEvento(venda, cred);
+      const evento = montaEvento(fato, cred);
       if (!evento) return pulado("sem identificador para o Meta reconhecer");
 
       let usado = evento;
@@ -106,11 +168,11 @@ export const metaConversaoHandler: EventHandler = {
 
       // O `ctwa_clid` só é aceito por dataset com conta do WhatsApp vinculada.
       // Enquanto essa ligação não existe, o Meta recusa o evento inteiro — e
-      // recusar a venda por causa da forma da atribuição seria perder o dado
-      // todo. Aqui a venda vai pelo telefone, e no dia em que a ligação existir
-      // a atribuição forte passa a valer sozinha, sem deploy.
+      // recusar o fato por causa da forma da atribuição seria perder o dado
+      // todo. Aqui ele vai pelo telefone, e no dia em que a ligação existir a
+      // atribuição forte passa a valer sozinha, sem deploy.
       if (!envio.ok && !envio.retentavel && evento.user_data.ctwa_clid) {
-        const semClique = montaEvento({ ...venda, ctwaClid: null }, cred);
+        const semClique = montaEvento({ ...fato, ctwaClid: null }, cred);
         if (semClique) {
           const recusa = envio.detalhe;
           usado = semClique;
@@ -119,7 +181,7 @@ export const metaConversaoHandler: EventHandler = {
             return {
               consumer_key: META_CONVERSAO_HANDLER_KEY,
               status: "ok",
-              detail: `fallback telefone (clique recusado: ${recusa.slice(0, 120)})`,
+              detail: `${usado.event_name} fallback telefone (clique recusado: ${recusa.slice(0, 100)})`,
             };
           }
         }
@@ -129,7 +191,7 @@ export const metaConversaoHandler: EventHandler = {
         return {
           consumer_key: META_CONVERSAO_HANDLER_KEY,
           status: "ok",
-          detail: `${usado.action_source} valor=${usado.custom_data?.value ?? "-"} ${envio.detalhe}`,
+          detail: `${usado.event_name} ${usado.action_source} valor=${usado.custom_data?.value ?? "-"} ${envio.detalhe}`,
         };
       }
       return {
