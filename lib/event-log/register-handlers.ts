@@ -17,6 +17,7 @@ import { followupGatilhoEtapaHandler } from "@/lib/followup/gatilho-etapa.handle
 import { followupGatilhoCasoHandler } from "@/lib/followup/gatilho-caso.handler";
 import { mediaPersistHandler } from "@/workers/media-persist-worker.handler";
 import { mediaDeriveHandler } from "@/workers/media-derive-worker.handler";
+import { metaConversaoHandler } from "@/lib/ads/meta-conversao.handler";
 import { registerHandler } from "@/lib/event-log/dispatcher";
 
 let _registered = false;
@@ -35,5 +36,6 @@ export function ensureHandlersRegistered(): void {
   registerHandler(followupGatilhoCasoHandler);
   registerHandler(mediaPersistHandler);
   registerHandler(mediaDeriveHandler);
+  registerHandler(metaConversaoHandler);
   _registered = true;
 }

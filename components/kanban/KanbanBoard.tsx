@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBoard } from "@/hooks/kanban/useBoard";
 import { useMoveCard } from "@/hooks/kanban/useMoveCard";
+import { useEditLead } from "@/hooks/kanban/useUpdateLead";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAtRiskLeads } from "@/hooks/leads/useAtRiskLeads";
 import { useReactivations } from "@/hooks/leads/useReactivations";
@@ -13,6 +14,7 @@ import type { Lead } from "@/lib/types/leads";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
 import { StageColumn } from "./StageColumn";
 import { LeadDossier } from "./LeadDossier";
+import { ValorDaVendaDialog } from "./ValorDaVendaDialog";
 
 interface KanbanBoardProps {
   pipelineId: string;
@@ -77,6 +79,13 @@ export function KanbanBoard({
   const useExternal = stagesProp !== undefined && leadsProp !== undefined;
   const queryResult = useBoard(useExternal ? null : pipelineId);
   const moveCard = useMoveCard(pipelineId);
+  const editLead = useEditLead(pipelineId);
+  // Movimento segurado na porta da etapa de ganho, esperando o valor da venda.
+  const [vendaPendente, setVendaPendente] = useState<{
+    lead: Lead;
+    stageId: string;
+    positionInStage: number;
+  } | null>(null);
   const { data: members } = useAssignableMembers(true);
   const ownerNames = useMemo(
     () => new Map((members ?? []).map((m) => [m.user_id, m.full_name])),
@@ -213,6 +222,19 @@ export function KanbanBoard({
         return;
       }
 
+      // Etapa de ganho sem valor no negócio: o valor só é verdade agora, e é
+      // ele que vira a conversão enviada ao Meta. Perguntar depois é não
+      // perguntar nunca — o card já saiu da frente do vendedor.
+      const etapaDestino = data.stages.find((s) => s.id === destStageId);
+      if (etapaDestino?.is_won && !lead.value_cents) {
+        setVendaPendente({
+          lead,
+          stageId: destStageId,
+          positionInStage: newPosition,
+        });
+        return;
+      }
+
       moveCard.mutate({
         leadId: lead.id,
         stageId: destStageId,
@@ -269,6 +291,39 @@ export function KanbanBoard({
           />
         ))}
       </div>
+      {vendaPendente && (
+        <ValorDaVendaDialog
+          aberto
+          nomeDoNegocio={vendaPendente.lead.title}
+          onCancelar={() => setVendaPendente(null)}
+          onPular={() => {
+            moveCard.mutate({
+              leadId: vendaPendente.lead.id,
+              stageId: vendaPendente.stageId,
+              positionInStage: vendaPendente.positionInStage,
+              expectedUpdatedAt: vendaPendente.lead.updated_at,
+            });
+            setVendaPendente(null);
+          }}
+          onConfirmar={async (valueCents) => {
+            const pedido = vendaPendente;
+            setVendaPendente(null);
+            // O valor entra ANTES da mudança de etapa: é a mudança de etapa que
+            // dispara a conversão, e ela precisa achar o valor já gravado.
+            // `updated_at` da resposta, senão o move bate em 409 com o seu.
+            const salvo = await editLead.mutateAsync({
+              leadId: pedido.lead.id,
+              patch: { value_cents: valueCents },
+            });
+            moveCard.mutate({
+              leadId: pedido.lead.id,
+              stageId: pedido.stageId,
+              positionInStage: pedido.positionInStage,
+              expectedUpdatedAt: salvo.data.updated_at,
+            });
+          }}
+        />
+      )}
       {leadDoDossie && (
         <LeadDossier
           open
