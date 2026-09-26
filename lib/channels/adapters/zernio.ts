@@ -201,12 +201,21 @@ export const zernioAdapter: ChannelAdapter = {
       // `wamid`. É o `external_id` da linha citada, nunca o `id` da nossa
       // tabela: o provider nunca viu o nosso. Só entra quando existe.
       ...(envelope.replyToExternalId ? { replyTo: envelope.replyToExternalId } : {}),
-      // Instagram: resposta de atendente humano vai com a etiqueta HUMAN_AGENT,
-      // que a Meta aceita por 7 dias depois da última mensagem do cliente (sem
-      // ela, só 24h). Depois dos 7 dias o envio volta `failed` com o motivo.
-      ...(creds.plataforma === "instagram"
-        ? { messagingType: "MESSAGE_TAG", messageTag: "HUMAN_AGENT" }
-        : {}),
+      // ⚠️ INSTAGRAM VAI SEM ETIQUETA, e isso não é esquecimento.
+      //
+      // A etiqueta HUMAN_AGENT estende a janela de resposta de 24h para 7 dias,
+      // mas exige que o app tenha a permissão "Human Agent" APROVADA pela Meta.
+      // O app não tem: a Meta responde 403 "To use 'Human Agent', your use of
+      // this endpoint must be reviewed and approved" — e recusa a mensagem
+      // INTEIRA, inclusive as que estavam dentro das 24h e não precisavam de
+      // etiqueta nenhuma. Em 26/09/2026 isso derrubou 100% dos envios do CRM
+      // para o Instagram (9 em 9); o que chegava ao cliente vinha do celular do
+      // vendedor, não daqui.
+      //
+      // Sem etiqueta, resposta dentro de 24h passa. Fora das 24h a Meta recusa
+      // com o erro de janela dela, que é a verdade do que está acontecendo.
+      // Quando a permissão for aprovada, a etiqueta volta — e só quando a
+      // conversa estiver fora das 24h, nunca em toda mensagem.
     };
 
     const res = await fetch(url, {
