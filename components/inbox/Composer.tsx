@@ -45,6 +45,14 @@ interface Props {
    */
   janelaFechada?: string | null;
   /**
+   * Aviso que NAO barra nada — o Instagram fora das 24h.
+   *
+   * Separado de `janelaFechada` de proposito: aquele desabilita o envio, este
+   * so conta o risco. Juntar os dois num campo so faria o proximo canal sem
+   * trava herdar o bloqueio por descuido.
+   */
+  janelaAviso?: string | null;
+  /**
    * A mensagem que esta resposta CITA, quando o atendente escolheu responder
    * "em cima" de uma. `null` = envio solto, o caso comum.
    *
@@ -66,6 +74,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     disabled,
     blockedReason,
     janelaFechada,
+    janelaAviso,
     contactName,
     currentContactId,
     respondendo,
@@ -215,6 +224,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
+        {janelaAviso && mode === "reply" ? (
+          <p className="mb-1.5 rounded-md border border-warning/40 bg-warning-bg px-2 py-1 text-xs text-warning-fg">
+            {janelaAviso}
+          </p>
+        ) : null}
         <TemplateMenu
           open={menuOpen}
           query={slash.query}

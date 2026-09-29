@@ -19,11 +19,30 @@ const flexibleTimestamp = z
   .min(10)
   .refine((s) => !Number.isNaN(Date.parse(s)), "expected_updated_at deve ser um timestamp válido");
 
-export const moveLeadSchema = z.object({
-  stage_id: z.string().uuid(),
-  position_in_stage: z.number().finite(),
-  expected_updated_at: flexibleTimestamp,
-});
+/**
+ * Mover um negocio. A guarda contra edicao concorrente tem DUAS formas, e a
+ * primeira e a certa.
+ *
+ * `expected_stage_id` — a etapa onde quem clicou VIU o negocio. E a unica coisa
+ * que uma mudanca de etapa pode atropelar, entao e o que deve barrar o envio.
+ *
+ * `expected_updated_at` — a forma antiga, larga demais: QUALQUER escrita na
+ * linha (tag, valor, dono, atividade da IA, carimbo de trigger) muda o
+ * `updated_at` e passava a recusar a mudanca de etapa com "Lead foi modificado
+ * por outro usuario". Como a tela do inbox nao recarrega o timestamp depois de
+ * cada acao, o atendente ficava preso no erro ate recarregar a pagina inteira
+ * (relatado em 29/09/2026). Continua aceito para nao quebrar cliente antigo.
+ */
+export const moveLeadSchema = z
+  .object({
+    stage_id: z.string().uuid(),
+    position_in_stage: z.number().finite(),
+    expected_updated_at: flexibleTimestamp.optional(),
+    expected_stage_id: z.string().uuid().optional(),
+  })
+  .refine((v) => Boolean(v.expected_stage_id ?? v.expected_updated_at), {
+    message: "Envie expected_stage_id (preferido) ou expected_updated_at.",
+  });
 export type MoveLeadInput = z.infer<typeof moveLeadSchema>;
 
 export const winLeadSchema = z.object({}).passthrough();

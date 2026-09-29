@@ -11,7 +11,8 @@ interface MoveArgs {
   leadId: string;
   stageId: string;
   positionInStage: number;
-  expectedUpdatedAt: string;
+  /** A etapa de onde o card saiu — a rota so recusa se ele ja tiver saido dela. */
+  expectedStageId: string | null;
 }
 
 export function useMoveCard(pipelineId: string) {
@@ -25,7 +26,9 @@ export function useMoveCard(pipelineId: string) {
       return apiClient.post<{ data: Lead }>(`/api/v1/leads/${args.leadId}/move`, {
         stage_id: args.stageId,
         position_in_stage: args.positionInStage,
-        expected_updated_at: args.expectedUpdatedAt,
+        ...(args.expectedStageId
+          ? { expected_stage_id: args.expectedStageId }
+          : {}),
       });
     },
     onMutate: async (args) => {

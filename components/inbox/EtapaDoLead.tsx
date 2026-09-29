@@ -16,8 +16,6 @@ interface Props {
   leadId: string;
   pipelineId: string | null;
   stageId: string | null;
-  /** `crm_leads.updated_at` — a rota recusa a troca se o lead mudou desde a leitura. */
-  updatedAt: string;
   /** Recarrega o painel: a etapa nova precisa aparecer aqui, não só no quadro. */
   aoMover: () => void;
 }
@@ -25,7 +23,7 @@ interface Props {
 /** Fim da coluna, mesma convenção da ação em massa do quadro. */
 const POSICAO_NO_FIM = 1_000_000;
 
-export function EtapaDoLead({ leadId, pipelineId, stageId, updatedAt, aoMover }: Props) {
+export function EtapaDoLead({ leadId, pipelineId, stageId, aoMover }: Props) {
   const etapas = useEtapasDoFunil(pipelineId);
   const [salvando, setSalvando] = useState(false);
 
@@ -38,7 +36,10 @@ export function EtapaDoLead({ leadId, pipelineId, stageId, updatedAt, aoMover }:
       await apiClient.post(`/api/v1/leads/${leadId}/move`, {
         stage_id: novaEtapa,
         position_in_stage: POSICAO_NO_FIM,
-        expected_updated_at: updatedAt,
+        // A guarda e a etapa que este painel esta mostrando: so recusa se
+        // alguem JA tiver movido o negocio. O timestamp da linha mudava a cada
+        // tag, nota ou carimbo e prendia o atendente num erro sem saida.
+        expected_stage_id: stageId,
       });
       aoMover();
     } catch (err) {

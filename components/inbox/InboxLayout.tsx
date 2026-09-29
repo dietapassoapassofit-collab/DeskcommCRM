@@ -2,7 +2,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/auth/AuthProvider";
-import { estadoDaJanela, formatarDecorrido } from "@/lib/channels/janela";
+import {
+  estadoDaJanela,
+  formatarDecorrido,
+  vencimentoDoInstagram,
+} from "@/lib/channels/janela";
 import { JanelaFechadaAviso } from "@/components/inbox/JanelaFechadaAviso";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
@@ -240,6 +244,19 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         : `A janela de 24h fechou há ${formatarDecorrido(janela.fechadaHaMs)}. Só um modelo aprovado sai daqui — texto livre é recusado pela plataforma.`
       : null;
 
+  // Instagram segue sem trava; o aviso conta a verdade ANTES de custar a
+  // digitacao. Fora das 24h a Meta recusa o texto livre — quando isso acontece
+  // o vendedor precisa saber que o caminho e outro canal, nao insistir aqui.
+  const vencidaHaMs =
+    selectedConversation?.channel_sessions?.plataforma === "instagram"
+      ? vencimentoDoInstagram(selectedConversation?.last_inbound_at ?? null, agoraJanela)
+      : null;
+  const avisoDaJanela =
+    vencidaHaMs === null
+      ? null
+      : `O cliente nao escreve ha mais de 24h (venceu ha ${formatarDecorrido(vencidaHaMs)}). ` +
+        "O Instagram costuma recusar mensagem fora dessa janela — se falhar, chame pelo WhatsApp.";
+
   const blockedReason = selectedConversation?.contacts?.is_blocked
     ? "Contato bloqueado — envio de mensagens desabilitado."
     : selectedConversation?.contacts?.is_anonymized
@@ -388,6 +405,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
               conversationId={selectedConversation.id}
               blockedReason={blockedReason}
               janelaFechada={motivoDaJanela}
+              janelaAviso={avisoDaJanela}
               disabled={selectedConversation.status === "closed"}
               contactName={selectedConversation.contacts?.name ?? null}
               respondendo={respondendo}

@@ -239,7 +239,7 @@ export function KanbanBoard({
         leadId: lead.id,
         stageId: destStageId,
         positionInStage: newPosition,
-        expectedUpdatedAt: lead.updated_at,
+        expectedStageId: lead.stage_id,
       });
     },
     [data, grouped, moveCard],
@@ -301,7 +301,7 @@ export function KanbanBoard({
               leadId: vendaPendente.lead.id,
               stageId: vendaPendente.stageId,
               positionInStage: vendaPendente.positionInStage,
-              expectedUpdatedAt: vendaPendente.lead.updated_at,
+              expectedStageId: vendaPendente.lead.stage_id,
             });
             setVendaPendente(null);
           }}
@@ -310,8 +310,7 @@ export function KanbanBoard({
             setVendaPendente(null);
             // O valor entra ANTES da mudança de etapa: é a mudança de etapa que
             // dispara a conversão, e ela precisa achar o valor já gravado.
-            // `updated_at` da resposta, senão o move bate em 409 com o seu.
-            const salvo = await editLead.mutateAsync({
+            await editLead.mutateAsync({
               leadId: pedido.lead.id,
               patch: { value_cents: valueCents },
             });
@@ -319,7 +318,7 @@ export function KanbanBoard({
               leadId: pedido.lead.id,
               stageId: pedido.stageId,
               positionInStage: pedido.positionInStage,
-              expectedUpdatedAt: salvo.data.updated_at,
+              expectedStageId: pedido.lead.stage_id,
             });
           }}
         />

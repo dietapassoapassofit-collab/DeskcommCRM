@@ -97,3 +97,38 @@ describe("bulkLeadActionSchema", () => {
     expect(r.success).toBe(false);
   });
 });
+
+/**
+ * A GUARDA DA MUDANÇA DE ETAPA.
+ *
+ * `expected_updated_at` recusava a mudança de etapa por QUALQUER escrita na
+ * linha — tag, valor, carimbo de trigger — e, como o painel do inbox não
+ * recarrega o timestamp depois de cada ação, o atendente ficava preso em "Lead
+ * foi modificado por outro usuário" até recarregar a página inteira (relatado
+ * em 29/09/2026). A guarda certa é a etapa vista: só recusa se o negócio já
+ * tiver saído dela, que é a única coisa que uma mudança de etapa atropela.
+ */
+describe("guarda da mudança de etapa", () => {
+  it("aceita só com a etapa vista", () => {
+    const r = moveLeadSchema.safeParse({
+      stage_id: UUID,
+      position_in_stage: 1,
+      expected_stage_id: UUID2,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("segue aceitando a forma antiga, por compatibilidade", () => {
+    const r = moveLeadSchema.safeParse({
+      stage_id: UUID,
+      position_in_stage: 1,
+      expected_updated_at: "2026-04-28T10:00:00.000Z",
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("recusa quando não vem guarda nenhuma", () => {
+    const r = moveLeadSchema.safeParse({ stage_id: UUID, position_in_stage: 1 });
+    expect(r.success).toBe(false);
+  });
+});

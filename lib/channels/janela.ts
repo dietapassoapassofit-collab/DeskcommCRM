@@ -93,6 +93,24 @@ export function estadoDaJanela(
  * Abaixo de um minuto vira "menos de 1m" e não "0m", que se lê como fechada —
  * e ainda dá para escrever.
  */
+/**
+ * Ha quanto tempo a janela de 24h do Instagram venceu, ou `null` se ainda vale.
+ *
+ * Existe separado de `estadoDaJanela` porque no Instagram o vencimento NAO
+ * barra o envio — o dono pediu campo livre, e barrar tiraria a unica tentativa
+ * possivel. O que o vencimento faz e avisar: a Meta recusa texto livre depois
+ * das 24h, e recusar sem aviso fez o vendedor digitar duas vezes e achar que o
+ * CRM estava lento (26/09/2026).
+ */
+export function vencimentoDoInstagram(
+  lastInboundAt: string | null,
+  agora: Date,
+): number | null {
+  if (!lastInboundAt) return null;
+  const vence = new Date(lastInboundAt).getTime() + WINDOW_MS;
+  return agora.getTime() > vence ? agora.getTime() - vence : null;
+}
+
 export function formatarRestante(ms: number): string {
   const totalMin = Math.floor(ms / 60_000);
   if (totalMin < 1) return "menos de 1m";

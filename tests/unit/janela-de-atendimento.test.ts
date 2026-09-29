@@ -83,3 +83,32 @@ describe("msAteAJanelaAbrir", () => {
     expect(msAteAJanelaAbrir(COMERCIAL, new Date("2026-08-18T23:00:00Z"))).toBe(12 * 60 * 60_000);
   });
 });
+
+/**
+ * INSTAGRAM: o vencimento avisa, nao barra.
+ *
+ * Em 26/09/2026 o CRM mandava toda mensagem do Instagram com a etiqueta
+ * HUMAN_AGENT e a Meta recusava o envio INTEIRO — 9 de 9 falharam, inclusive
+ * respostas dadas minutos depois do cliente escrever. Tirada a etiqueta, a
+ * regra que volta a valer e a das 24h; estes casos prendem a conta que decide
+ * quando o vendedor precisa ser avisado.
+ */
+describe('vencimentoDoInstagram', () => {
+  const agora = new Date('2026-09-26T18:00:00Z');
+
+  it('dentro das 24h nao avisa', async () => {
+    const { vencimentoDoInstagram } = await import('@/lib/channels/janela');
+    expect(vencimentoDoInstagram('2026-09-26T17:00:00Z', agora)).toBeNull();
+    expect(vencimentoDoInstagram('2026-09-25T18:00:01Z', agora)).toBeNull();
+  });
+
+  it('passou das 24h devolve ha quanto tempo venceu', async () => {
+    const { vencimentoDoInstagram } = await import('@/lib/channels/janela');
+    expect(vencimentoDoInstagram('2026-09-25T17:00:00Z', agora)).toBe(60 * 60 * 1000);
+  });
+
+  it('cliente que nunca escreveu nao tem vencimento para contar', async () => {
+    const { vencimentoDoInstagram } = await import('@/lib/channels/janela');
+    expect(vencimentoDoInstagram(null, agora)).toBeNull();
+  });
+});

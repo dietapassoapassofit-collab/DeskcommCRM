@@ -92,7 +92,11 @@ export async function POST(
       updated_at: new Date().toISOString(),
     })
     .eq("id", leadId)
-    .eq("updated_at", input.expected_updated_at)
+    // A guarda: etapa vista (preferida) ou o timestamp da linha (forma antiga).
+    .eq(
+      input.expected_stage_id ? "stage_id" : "updated_at",
+      input.expected_stage_id ?? input.expected_updated_at!,
+    )
     .select("id")
     .maybeSingle();
 
@@ -104,18 +108,21 @@ export async function POST(
     // Concurrent edit. Re-fetch current to surface the latest updated_at.
     const { data: current } = await supabase
       .from("crm_leads")
-      .select("updated_at")
+      .select("updated_at, stage_id")
       .eq("id", leadId)
       .maybeSingle();
-    return fail(
-      "lead_stage_changed_concurrent",
-      "Lead foi modificado por outro usuário. Recarregue e tente novamente.",
-      409,
-      {
-        details: { current_updated_at: current?.updated_at ?? null },
-        requestId,
+    // A mensagem diz o que aconteceu de verdade: com a guarda por etapa, chegar
+    // aqui significa que o negocio JA saiu da etapa de onde ele foi arrastado.
+    const mensagem = input.expected_stage_id
+      ? "Alguem moveu este negócio antes de você. Atualize a tela para ver onde ele está."
+      : "Lead foi modificado por outro usuário. Recarregue e tente novamente.";
+    return fail("lead_stage_changed_concurrent", mensagem, 409, {
+      details: {
+        current_updated_at: current?.updated_at ?? null,
+        current_stage_id: current?.stage_id ?? null,
       },
-    );
+      requestId,
+    });
   }
 
   // Re-SELECT so trigger-driven status/closed_at changes are reflected.
