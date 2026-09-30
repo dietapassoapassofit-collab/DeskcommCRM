@@ -6,6 +6,8 @@
  * intentional here because we resolve the user from the validated JWT first
  * and then filter by `user_id` (a trusted source).
  */
+import { cache } from "react";
+
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { logger } from "@/lib/logger";
@@ -58,7 +60,17 @@ export function ehSessaoAusente(error: { name?: string } | null | undefined): bo
   return error?.name === "AuthSessionMissingError";
 }
 
-export async function loadAuthUser(): Promise<AuthUser | null> {
+/**
+ * MEMOIZADA POR REQUISICAO (`cache` do React).
+ *
+ * A mesma requisicao chamava isto mais de uma vez — a rota conferia o usuario e
+ * a funcao conferia de novo —, e cada conferencia e uma ida ao GoTrue de ~250ms.
+ * Com a memoizacao, a segunda chamada em diante sai da memoria da requisicao;
+ * requisicoes diferentes continuam independentes, entao nao ha risco de um
+ * usuario enxergar a permissao de outro. Fora do escopo de requisicao (teste,
+ * script), `cache` simplesmente nao memoiza — o comportamento nao muda.
+ */
+export const loadAuthUser = cache(async function loadAuthUser(): Promise<AuthUser | null> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -108,19 +120,28 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
   // ⚠️ O erro é capturado de propósito: aqui `data: null` é AMBÍGUO — significa tanto
   // "não é platform admin" (RLS filtrou, estado normal) quanto "a query falhou".
   // Sem separar os dois, um banco instável rebaixa silenciosamente um super-admin.
-  const { data: paRow, error: paErro } = await supabase
-    .from("platform_admins")
-    .select("user_id, revoked_at")
-    .eq("user_id", user.id)
-    .is("revoked_at", null)
-    .maybeSingle();
-
-  // Org memberships (only active = not revoked, accepted)
-  const { data: rawMemberships, error: membErro } = await supabase
-    .from("user_organizations")
-    .select("organization_id, role, organizations(display_name)")
-    .eq("user_id", user.id)
-    .is("revoked_at", null);
+  // ⚠️ EM PARALELO, e isso e desempenho medido, nao estilo. Cada ida a API do
+  // Supabase custa ~250ms de processamento do lado de la (medido em
+  // 30/09/2026: a consulta em si roda em 10ms e a rede leva 3ms — o resto e
+  // CPU da instancia). Em fila, estas duas leituras somavam meio segundo em
+  // TODA requisicao autenticada do produto. Uma nao depende da outra.
+  const [
+    { data: paRow, error: paErro },
+    { data: rawMemberships, error: membErro },
+  ] = await Promise.all([
+    supabase
+      .from("platform_admins")
+      .select("user_id, revoked_at")
+      .eq("user_id", user.id)
+      .is("revoked_at", null)
+      .maybeSingle(),
+    // Org memberships (only active = not revoked, accepted)
+    supabase
+      .from("user_organizations")
+      .select("organization_id, role, organizations(display_name)")
+      .eq("user_id", user.id)
+      .is("revoked_at", null),
+  ]);
 
   /**
    * FALHA ALTO, não baixo.
@@ -178,7 +199,7 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
     locale,
     organizations: memberships,
   };
-}
+});
 
 /**
  * Resolves the active organization for the current request.
