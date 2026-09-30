@@ -488,6 +488,8 @@ export function CRMSidePanel({ conversation }: Props) {
                   leadId={l.id}
                   pipelineId={l.pipeline_id}
                   stageId={l.stage_id}
+                  titulo={l.title}
+                  valueCents={l.value_cents}
                   aoMover={() => setTentativa((n) => n + 1)}
                 />
               </li>
