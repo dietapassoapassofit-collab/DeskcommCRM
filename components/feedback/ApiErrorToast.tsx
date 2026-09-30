@@ -60,7 +60,31 @@ const COPY: Record<string, { variant: Variant; msg: string }> = {
   },
 };
 
+/** Cancelamento vindo da propria tela: trocar de conversa, filtrar, desmontar. */
+function ehCancelamento(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { name?: string }).name === "AbortError";
+}
+
+/** Estouro de tempo do cliente (ver `DEFAULT_TIMEOUT_MS` em lib/api/client.ts). */
+function ehEstouroDeTempo(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { name?: string }).name === "TimeoutError";
+}
+
 export function showApiError(err: unknown): void {
+  // ⚠️ REQUISICAO CANCELADA NAO E ERRO — e nao mostrar isso e o conserto, nao a
+  // omissao. Quem cancelou foi a propria tela: o vendedor clicou na conversa
+  // seguinte antes da anterior responder, e o CRM respondia com "Erro
+  // inesperado. Tente novamente." (tres toasts empilhados em 30/09/2026, com o
+  // Caddy registrando `aborting with incomplete response` em menos de 1s).
+  if (ehCancelamento(err)) return;
+
+  if (ehEstouroDeTempo(err)) {
+    toast.error("A conexão demorou demais para responder.", {
+      description: "Verifique a internet e tente de novo.",
+    });
+    return;
+  }
+
   if (err instanceof ApiError) {
     const entry = COPY[err.code];
     const description = err.requestId ? `ID: ${err.requestId}` : undefined;

@@ -125,7 +125,14 @@ async function request<T>(
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const timeoutController = new AbortController();
-    const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+    // ⚠️ ABORTA COM NOME PROPRIO. Cancelamento da tela (trocar de conversa,
+    // desmontar componente) e estouro de tempo chegam os DOIS como `AbortError`
+    // e viravam o mesmo "Erro inesperado" para o vendedor — um e normal, o
+    // outro e problema de conexao. `TimeoutError` separa os dois na origem.
+    const timer = setTimeout(
+      () => timeoutController.abort(new DOMException(`passou de ${timeoutMs}ms`, "TimeoutError")),
+      timeoutMs,
+    );
     const signal = combineSignals([timeoutController.signal, opts.signal]);
 
     try {

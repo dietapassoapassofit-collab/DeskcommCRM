@@ -83,3 +83,40 @@ describe("ApiErrorToast", () => {
     expect(toast.error).toHaveBeenCalledWith("Erro inesperado. Tente novamente.");
   });
 });
+
+/**
+ * CANCELAMENTO NÃO É ERRO.
+ *
+ * O vendedor clicava na conversa seguinte antes da anterior responder; a tela
+ * cancelava a requisição em andamento e o CRM respondia com "Erro inesperado.
+ * Tente novamente." — três toasts empilhados na tela dele em 30/09/2026,
+ * enquanto o Caddy registrava `aborting with incomplete response` com menos de
+ * 1s de duração. Nada estava quebrado: o CRM gritava com o próprio cancelamento.
+ *
+ * Estouro de tempo continua aparecendo, com o nome certo: esse é problema de
+ * conexão e o vendedor precisa saber.
+ */
+describe("showApiError — cancelamento e estouro de tempo", () => {
+  // Limpa aqui tambem: este bloco vive FORA do describe de cima, e sem isto a
+  // chamada de outro caso vazaria para o "nao foi chamado" deste.
+  beforeEach(() => {
+    vi.mocked(toast.error).mockClear();
+    vi.mocked(toast.warning).mockClear();
+    vi.mocked(toast.info).mockClear();
+  });
+
+  it("cancelamento da própria tela não vira toast", () => {
+    showApiError(new DOMException("cancelado", "AbortError"));
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("estouro de tempo fala de conexão, não de erro inesperado", () => {
+    showApiError(new DOMException("passou de 10000ms", "TimeoutError"));
+    expect(toast.error).toHaveBeenCalledWith(
+      "A conexão demorou demais para responder.",
+      { description: "Verifique a internet e tente de novo." },
+    );
+  });
+});
