@@ -20,18 +20,21 @@ describe("VideoMedia", () => {
     expect(box).toHaveClass("relative", "w-full", "max-w-sm", "overflow-hidden", "rounded-lg");
   });
 
-  it("mostra skeleton enquanto carrega, desaparece após loadedmetadata", () => {
+  /**
+   * NÃO BAIXA NADA ATÉ O PLAY, e o esqueleto saiu junto.
+   *
+   * Com `preload="metadata"`, todo vídeo da thread buscava o arquivo assim que
+   * a bolha renderizava: abrir uma conversa disparava 31 chamadas de API, a
+   * maioria `/messages/<id>/media` (medido em 01/10/2026), e no navegador do
+   * vendedor isso estourava o teto de 10s do cliente. O esqueleto dependia de
+   * `loadedmetadata`, que com `preload="none"` só acontece depois do play —
+   * mantê-lo cobriria o player para sempre.
+   */
+  it("não busca o arquivo antes do play, e não fica coberto esperando", () => {
     const { container } = render(<VideoMedia messageId="m4" />);
     const video = container.querySelector("video")!;
-    const skeleton = container.querySelector(".absolute.inset-0");
 
-    // Skeleton deve estar presente antes do evento
-    expect(skeleton).not.toBeNull();
-
-    // Dispara loadedmetadata
-    fireEvent(video, new Event("loadedmetadata"));
-
-    // Skeleton deve desaparecer
+    expect(video).toHaveAttribute("preload", "none");
     expect(container.querySelector(".absolute.inset-0")).toBeNull();
   });
 

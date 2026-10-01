@@ -81,7 +81,18 @@ export function AudioPlayer({ messageId, isOutbound }: Props) {
 
   return (
     <div className="flex w-60 items-center gap-2 py-1">
-      <audio ref={audioRef} src={mediaSrc(messageId)} preload="metadata" />
+      {/*
+        ⚠️ `preload="none"`, e isso é a conta de abrir a conversa.
+        Com `metadata`, TODO áudio da thread busca o arquivo assim que a bolha
+        renderiza: medido em 01/10/2026, abrir uma conversa disparava 31
+        chamadas de API, a maioria `/messages/<id>/media` a ~1,7s cada. No
+        navegador do vendedor, com seis conexões por vez, isso estourava o teto
+        de 10s do cliente e enchia a tela de "A conexão demorou demais".
+        O preço é a duração só aparecer depois do play — o `metadata` chega
+        junto com o áudio. O áudio não guarda duração no banco; no dia em que
+        guardar, dá para mostrar antes sem baixar nada.
+      */}
+      <audio ref={audioRef} src={mediaSrc(messageId)} preload="none" />
       <button
         type="button"
         aria-label={playing ? "Pausar áudio" : "Reproduzir áudio"}
