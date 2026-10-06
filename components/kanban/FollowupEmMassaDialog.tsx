@@ -23,6 +23,7 @@ import {
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
+import { TEXTO_DO_MOTIVO, type Previa } from "@/lib/followup/previa-do-disparo";
 
 /**
  * Minutos entre um lead e o próximo (3 min = 180s, escolha do lojista). Os
@@ -64,10 +65,43 @@ export function FollowupEmMassaDialog({
     setAbertoEm(aberto ? Date.now() : null);
   }, [aberto]);
 
+  // QUEM PODE RECEBER, ANTES DE INSCREVER NINGUÉM.
+  //
+  // Sem isto o lote inscrevia todo mundo e descobria depois: medido em 14 dias,
+  // 31 contatos do Instagram ocupavam vaga, gastavam os 3 minutos de
+  // espaçamento de cada um e morriam no fim da fila por estarem fora das 24h.
+  const [previa, setPrevia] = useState<Previa | null>(null);
+  const [carregandoPrevia, setCarregandoPrevia] = useState(false);
+  useEffect(() => {
+    if (!aberto || contatos.length === 0) {
+      setPrevia(null);
+      return;
+    }
+    let vivo = true;
+    setCarregandoPrevia(true);
+    apiClient
+      .post<{ data: Previa }>("/api/v1/ai/followups/enrollments/previa", { contact_ids: contatos })
+      .then((r) => {
+        if (vivo) setPrevia(r.data);
+      })
+      .catch(() => {
+        // Prévia é conforto, não porteiro: se ela falhar, o disparo segue com a
+        // lista inteira e o motor continua barrando quem não pode.
+        if (vivo) setPrevia(null);
+      })
+      .finally(() => {
+        if (vivo) setCarregandoPrevia(false);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [aberto, contatos]);
+
   // Sem teto: quem decide o tamanho do lote é o lojista, e o que protege o
   // número é o espaçamento, não um limite arbitrário. O que ele precisa ver
   // ANTES de confirmar é quando a última mensagem sai.
-  const doLote = contatos;
+  const doLote = previa ? previa.aptos : contatos;
+  const foraDoLote = previa ? previa.fora.length : 0;
   const ultimoEm = doLote.length > 1 ? (doLote.length - 1) * INTERVALO_MIN : 0;
   // O relógio é lido ao ABRIR, não a cada render: ler a hora durante o render
   // é impuro (e o compilador do React reprova), e o número na tela ficaria
@@ -161,6 +195,16 @@ export function FollowupEmMassaDialog({
                 Passa das {FIM_DO_HORARIO}h: quem sobrar recebe na manhã seguinte, a partir das 7h.
               </p>
             )}
+            {foraDoLote > 0 && previa && (
+              <p className="mt-1 text-text-muted">
+                {foraDoLote} de {contatos.length} ficam de fora:{" "}
+                {Object.entries(previa.resumo)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([motivo, n]) => `${n} ${TEXTO_DO_MOTIVO[motivo as keyof typeof TEXTO_DO_MOTIVO]}`)
+                  .join(", ")}
+                .
+              </p>
+            )}
             {semContato > 0 && (
               <p className="mt-1 text-text-muted">
                 {semContato} selecionado{semContato === 1 ? "" : "s"} sem contato ligado — esses não recebem.
@@ -180,8 +224,12 @@ export function FollowupEmMassaDialog({
           >
             {rodando ? "Parar" : "Cancelar"}
           </Button>
-          <Button onClick={colocar} disabled={!fluxo || rodando || doLote.length === 0}>
-            {rodando ? `Colocando… ${feitos}/${doLote.length}` : `Colocar ${doLote.length} no follow-up`}
+          <Button onClick={colocar} disabled={!fluxo || rodando || carregandoPrevia || doLote.length === 0}>
+            {rodando
+              ? `Colocando… ${feitos}/${doLote.length}`
+              : carregandoPrevia
+                ? "Conferindo quem pode receber…"
+                : `Colocar ${doLote.length} no follow-up`}
           </Button>
         </DialogFooter>
       </DialogContent>
