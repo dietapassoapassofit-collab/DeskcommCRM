@@ -25,6 +25,14 @@ export interface LeadFilters {
   valueCentsMin?: number | null;
   valueCentsMax?: number | null;
   overdueOnly?: boolean;
+  /**
+   * Só quem parou: nenhuma atividade há 24h ou mais — o mesmo limiar que o card
+   * usa para escrever "Sem resposta há X dias".
+   *
+   * Existe para o disparo: o lojista filtra, "Selecionar todos", e o lote já sai
+   * só com quem parou. Antes disso ele teria que achar um a um no olho.
+   */
+  paradosOnly?: boolean;
 }
 
 /**
@@ -47,6 +55,7 @@ export function filtersFromParams(
     tag: tag ?? undefined,
     search: search ?? undefined,
     overdueOnly: sp.get("overdue") === "1" || undefined,
+    paradosOnly: sp.get("parados") === "1" || undefined,
   };
 }
 
@@ -57,10 +66,29 @@ export function filtersToParams(f: LeadFilters): string {
   if (f.tag) p.set("tag", f.tag);
   if (f.search?.trim()) p.set("q", f.search.trim());
   if (f.overdueOnly) p.set("overdue", "1");
+  if (f.paradosOnly) p.set("parados", "1");
   return p.toString();
 }
 
+/**
+ * Horas sem atividade a partir das quais o negócio conta como parado.
+ *
+ * É o mesmo limiar de esfriamento do radar (`RISK_COLD_HOURS`). A conta mora
+ * aqui, e não vem do radar, porque o radar é paginado: ele devolve no máximo
+ * 200 linhas e a Space tem 367 em risco — filtrar por ele mostraria uma fatia e
+ * esconderia o resto em silêncio.
+ */
+export const HORAS_SEM_RESPOSTA = 24;
+
+/** Último sinal de vida: a atividade, ou o nascimento quando nunca houve uma. */
+function horasParado(lead: Lead, agora: number): number {
+  const marco = lead.last_activity_at ?? lead.created_at;
+  if (!marco) return Number.POSITIVE_INFINITY;
+  return (agora - new Date(marco).getTime()) / 3_600_000;
+}
+
 export function applyFilters(leads: Lead[], f: LeadFilters): Lead[] {
+  const agora = Date.now();
   const today = new Date().toISOString().slice(0, 10);
   const search = f.search?.trim().toLowerCase() ?? "";
 
@@ -94,6 +122,7 @@ export function applyFilters(leads: Lead[], f: LeadFilters): Lead[] {
       if (l.status !== "open") return false;
       if (!l.expected_close_date || l.expected_close_date >= today) return false;
     }
+    if (f.paradosOnly && horasParado(l, agora) < HORAS_SEM_RESPOSTA) return false;
     return true;
   });
 }

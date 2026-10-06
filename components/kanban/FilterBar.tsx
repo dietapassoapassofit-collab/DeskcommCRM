@@ -212,10 +212,26 @@ export function FilterBar({ filters, onChange, leads }: FilterBarProps) {
         Apenas atrasados
       </label>
 
+      <label
+        className={cn(
+          "flex cursor-pointer select-none items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm",
+          filters.paradosOnly && "border-accent bg-accent/10",
+        )}
+        title="Nenhuma atividade há 24h ou mais — o mesmo que o card marca como sem resposta"
+      >
+        <input
+          type="checkbox"
+          checked={!!filters.paradosOnly}
+          onChange={(e) => onChange({ ...filters, paradosOnly: e.target.checked })}
+        />
+        Parados sem resposta
+      </label>
+
       {(filters.search ||
         filters.owner ||
         filters.tag ||
         filters.overdueOnly ||
+        filters.paradosOnly ||
         (filters.status && filters.status !== "all")) && (
         <Button
           variant="ghost"
