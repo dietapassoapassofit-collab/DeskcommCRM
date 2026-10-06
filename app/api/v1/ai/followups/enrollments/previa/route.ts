@@ -60,7 +60,15 @@ export async function POST(req: NextRequest): Promise<Response> {
         .from("followup_enrollments")
         .select("contact_id")
         .eq("organization_id", org)
-        .eq("status", "active")
+        // ⚠️ OS QUATRO STATUS DO ÍNDICE, não só `active`.
+        //
+        // `idx_followup_enrollments_one_live` é UNIQUE em (organization_id,
+        // contact_id) onde status está em active/waiting_reply/paused_handoff/
+        // paused_manual. A prévia olhava só `active` e prometia 110 aptos num
+        // disparo em que o banco recusou os 110 com 409 — a Space tinha 159
+        // inscrições `paused_manual` segurando esses contatos (06/10/2026).
+        // Prévia que não usa a MESMA regra do banco é prévia que mente.
+        .in("status", ["active", "waiting_reply", "paused_handoff", "paused_manual"])
         .in("contact_id", lote),
     ),
     consultaEmLotes(ids, (lote) =>
