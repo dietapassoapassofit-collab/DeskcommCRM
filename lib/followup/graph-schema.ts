@@ -174,9 +174,24 @@ export const randomizerBranchSchema = z.strictObject({
 
 export type RandomizerBranch = z.infer<typeof randomizerBranchSchema>;
 
+/**
+ * ⚠️ O TETO DE CAMINHOS SAIU DE 5 PARA 30, e a conta que obriga isso é a da
+ * trava antirrepetição (`lib/agent-engine/spinning`): ela olha as ÚLTIMAS 20
+ * mensagens do número e veta a candidata que casar com 2 ou mais (idêntica ou
+ * Jaccard ≥ 0,8).
+ *
+ * Num disparo em massa a janela inteira é o próprio disparo. Com 5 versões,
+ * cada uma aparece ~4 vezes nas últimas 20 e TODA mensagem seguinte é vetada —
+ * medido em 06/10/2026 num disparo real da SpacePhone: 12 vetadas contra 4
+ * enviadas. Para a repetição ficar abaixo do limite, o número de versões tem
+ * que passar da janela: 20+.
+ *
+ * O 5 não protegia nada; era chute meu de quando o bloco nasceu para campanhas
+ * de poucos leads.
+ */
 export const randomizerConfigSchema = z
   .strictObject({
-    branches: z.array(randomizerBranchSchema).min(2).max(5),
+    branches: z.array(randomizerBranchSchema).min(2).max(30),
   })
   .refine((c) => new Set(c.branches.map((b) => b.id)).size === c.branches.length, {
     message: 'branches[].id must be unique within the node',
