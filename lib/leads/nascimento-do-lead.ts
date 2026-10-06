@@ -218,8 +218,14 @@ export async function garantirLeadDaConversa(
       // O ponto ao lado do título só acende se a organização cadastrar este
       // rótulo em `crm_pipelines.settings.canonical_tags` (Configurações do
       // funil) — a tag sempre entra; o destaque visual é opt-in do operador.
-      // Instagram também vira tag: o vendedor filtra o funil pela origem.
-      tags: [...(rotuloDeAnuncio ? [rotuloDeAnuncio] : []), ...(rede === "Instagram" ? ["Instagram"] : [])],
+      // A REDE SEMPRE VIRA TAG — Instagram e WhatsApp.
+      //
+      // Antes só o Instagram era marcado, e o filtro de tag do quadro monta as
+      // opções a partir das tags dos próprios negócios: sem a tag, não havia
+      // como o vendedor separar quem veio do WhatsApp (pedido do gerente,
+      // 06/10/2026). A tag entra sempre; o pontinho no card continua sendo
+      // opt-in por `crm_pipelines.settings.canonical_tags`.
+      tags: [...(rotuloDeAnuncio ? [rotuloDeAnuncio] : []), rede],
     })
     .select("id")
     .single();
