@@ -26,6 +26,12 @@ export interface CredenciaisDeConversao {
   datasetId: string;
   /** Conta do WhatsApp dona do clique — o Meta usa para casar o `ctwa_clid`. */
   wabaId: string;
+  /**
+   * Página do Facebook dona do Instagram da loja. Opcional: org que não
+   * atende por Direct não precisa, e a ausência só desliga o ramo do
+   * Instagram — o do WhatsApp segue igual.
+   */
+  pageId?: string;
   /** Opcional: manda o evento para a aba de teste do Events Manager. */
   testCode?: string;
 }
@@ -48,10 +54,18 @@ export function credenciaisDaOrg(
   const token = (ambiente[`META_CAPI_${chave}_TOKEN`] ?? "").trim();
   const datasetId = (ambiente[`META_CAPI_${chave}_DATASET_ID`] ?? "").trim();
   const wabaId = (ambiente[`META_CAPI_${chave}_WABA_ID`] ?? "").trim();
+  const pageId = (ambiente[`META_CAPI_${chave}_PAGE_ID`] ?? "").trim();
   if (!endpoint.startsWith("https://")) return null;
   if (!token || !datasetId || !wabaId) return null;
   const testCode = (ambiente.META_CAPI_TEST_CODE ?? "").trim();
-  return { endpoint, token, datasetId, wabaId, testCode: testCode || undefined };
+  return {
+    endpoint,
+    token,
+    datasetId,
+    wabaId,
+    pageId: pageId || undefined,
+    testCode: testCode || undefined,
+  };
 }
 
 export const hash = (valor: string): string =>
@@ -81,8 +95,14 @@ export interface FatoDoFunil {
   valorCentavos: number | null;
   moeda: string | null;
   aconteceuEm: Date;
-  /** Id do clique no anúncio, quando o contato veio de um. */
+  /** Id do clique no anúncio, quando o contato veio de um. Só WhatsApp. */
   ctwaClid: string | null;
+  /**
+   * Id da pessoa dentro da página (IGSID), quando a conversa é do Direct.
+   * É o par do `ctwa_clid` no Instagram: o Meta não tem telefone dessas
+   * pessoas, então sem ele não há como reconhecer quem comprou.
+   */
+  igsid: string | null;
   telefone: string | null;
   email: string | null;
 }
@@ -112,7 +132,14 @@ export function montaEvento(
   cred: CredenciaisDeConversao,
 ): EventoDeConversao | null {
   const userData: Record<string, string> = {};
-  if (fato.ctwaClid) {
+  // Instagram primeiro: contato de Direct não tem telefone, então o IGSID
+  // costuma ser o ÚNICO identificador. O WhatsApp quase sempre tem telefone
+  // de reserva, e por isso aguenta ser o segundo.
+  const porDireto = Boolean(fato.igsid && cred.pageId);
+  if (porDireto) {
+    userData.page_id = cred.pageId as string;
+    userData.page_scoped_user_id = fato.igsid as string;
+  } else if (fato.ctwaClid) {
     userData.ctwa_clid = fato.ctwaClid;
     userData.whatsapp_business_account_id = cred.wabaId;
   }
@@ -129,10 +156,11 @@ export function montaEvento(
     // segundo como repetição.
     event_id: fato.tipo === "venda" ? fato.leadId : `${fato.leadId}-lead`,
     event_time: Math.floor(fato.aconteceuEm.getTime() / 1000),
-    action_source: fato.ctwaClid ? "business_messaging" : "other",
+    action_source: porDireto || fato.ctwaClid ? "business_messaging" : "other",
     user_data: userData,
   };
-  if (fato.ctwaClid) evento.messaging_channel = "whatsapp";
+  if (porDireto) evento.messaging_channel = "instagram";
+  else if (fato.ctwaClid) evento.messaging_channel = "whatsapp";
   if (fato.tipo === "venda" && fato.valorCentavos && fato.valorCentavos > 0) {
     evento.custom_data = {
       currency: fato.moeda || "BRL",

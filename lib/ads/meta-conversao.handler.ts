@@ -52,6 +52,17 @@ interface Etapa {
  * onde todo mundo passa, então chegar nela não qualifica ninguém. Qualificar é
  * SAIR dela: alguém leu a conversa e decidiu que aquilo é um lead de verdade.
  */
+/**
+ * O id da pessoa no Instagram, tirado da identidade do contato
+ * (`lid:ig.1008139492308174`). Só o Direct tem esse formato; WhatsApp usa
+ * `phone:+55...` e devolve `null` aqui.
+ */
+export function igsidDaIdentidade(identidade: string | null): string | null {
+  const m = /^lid:ig\.(\d+)$/.exec((identidade ?? "").trim());
+  // `m[1]` e `string | undefined` sob noUncheckedIndexedAccess, nao `string`.
+  return m?.[1] ?? null;
+}
+
 export function fatoDaEtapa(
   etapas: Etapa[],
   destinoId: string,
@@ -128,12 +139,13 @@ export const metaConversaoHandler: EventHandler = {
       // pede o valor na hora de ganhar — este caminho é a exceção.
 
       let ctwaClid: string | null = null;
+      let igsid: string | null = null;
       let telefone: string | null = null;
       let email: string | null = null;
       if (lead.contact_id) {
         const { data: contato } = await admin
           .from("contacts")
-          .select("phone_number, email, source_metadata, is_anonymized")
+          .select("phone_number, email, wa_identity, source_metadata, is_anonymized")
           .eq("id", lead.contact_id)
           .maybeSingle();
         // Contato anonimizado por pedido de LGPD não volta para o Meta nem em hash.
@@ -141,6 +153,7 @@ export const metaConversaoHandler: EventHandler = {
         const meta = (contato?.source_metadata ?? {}) as Record<string, unknown>;
         const bruto = (meta.ad_raw ?? {}) as Record<string, unknown>;
         ctwaClid = texto(bruto.ctwaClid) ?? texto(meta.ctwa_clid);
+        igsid = igsidDaIdentidade(texto(contato?.wa_identity ?? null));
         telefone = texto(contato?.phone_number ?? null);
         email = texto(contato?.email ?? null);
       }
@@ -156,6 +169,7 @@ export const metaConversaoHandler: EventHandler = {
           (tipo === "venda" ? lead.closed_at : null) ?? row.created_at ?? Date.now(),
         ),
         ctwaClid,
+        igsid,
         telefone,
         email,
       };
@@ -171,8 +185,12 @@ export const metaConversaoHandler: EventHandler = {
       // recusar o fato por causa da forma da atribuição seria perder o dado
       // todo. Aqui ele vai pelo telefone, e no dia em que a ligação existir a
       // atribuição forte passa a valer sozinha, sem deploy.
-      if (!envio.ok && !envio.retentavel && evento.user_data.ctwa_clid) {
-        const semClique = montaEvento({ ...fato, ctwaClid: null }, cred);
+      if (
+        !envio.ok &&
+        !envio.retentavel &&
+        (evento.user_data.ctwa_clid || evento.user_data.page_scoped_user_id)
+      ) {
+        const semClique = montaEvento({ ...fato, ctwaClid: null, igsid: null }, cred);
         if (semClique) {
           const recusa = envio.detalhe;
           usado = semClique;

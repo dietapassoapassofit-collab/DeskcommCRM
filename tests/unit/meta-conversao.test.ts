@@ -14,7 +14,7 @@ import {
   normalizaTelefone,
   type FatoDoFunil,
 } from "@/lib/ads/meta-conversao";
-import { fatoDaEtapa } from "@/lib/ads/meta-conversao.handler";
+import { fatoDaEtapa, igsidDaIdentidade } from "@/lib/ads/meta-conversao.handler";
 
 const CRED = {
   endpoint: "https://exemplo.invalido/v21.0",
@@ -30,6 +30,7 @@ const VENDA: FatoDoFunil = {
   moeda: "BRL",
   aconteceuEm: new Date("2026-09-25T18:00:00Z"),
   ctwaClid: null,
+  igsid: null,
   telefone: "(81) 99999-0000",
   email: null,
 };
@@ -143,5 +144,41 @@ describe("credenciaisDaOrg", () => {
 
   it("endpoint que não é https não vale", () => {
     expect(credenciaisDaOrg("spacephone", { ...amb, META_CAPI_ENDPOINT: "http://x.invalido" })).toBeNull();
+  });
+});
+
+describe("Instagram Direct", () => {
+  const CRED_IG = { ...CRED, pageId: "pagina-1" };
+
+  it("manda o id da pessoa na pagina, nao o clique do WhatsApp", () => {
+    const e = montaEvento({ ...VENDA, igsid: "igsid-9" }, CRED_IG)!;
+    expect(e.action_source).toBe("business_messaging");
+    expect(e.messaging_channel).toBe("instagram");
+    expect(e.user_data.page_id).toBe("pagina-1");
+    expect(e.user_data.page_scoped_user_id).toBe("igsid-9");
+    expect(e.user_data.ctwa_clid).toBeUndefined();
+  });
+
+  it("sem a pagina configurada, nao inventa atribuicao de Direct", () => {
+    // Org sem Direct: o telefone ainda identifica, mas o canal nao e messaging.
+    const e = montaEvento({ ...VENDA, igsid: "igsid-9" }, CRED)!;
+    expect(e.action_source).toBe("other");
+    expect(e.user_data.page_scoped_user_id).toBeUndefined();
+  });
+
+  it("contato de Direct sem telefone ainda tem como ser reconhecido", () => {
+    const e = montaEvento({ ...VENDA, igsid: "igsid-9", telefone: null }, CRED_IG);
+    expect(e).not.toBeNull();
+    expect(e!.user_data.ph).toBeUndefined();
+  });
+
+  it("sem pagina e sem telefone, nao ha evento a mandar", () => {
+    expect(montaEvento({ ...VENDA, igsid: "igsid-9", telefone: null }, CRED)).toBeNull();
+  });
+
+  it("le o id da pessoa so da identidade do Instagram", () => {
+    expect(igsidDaIdentidade("lid:ig.1008139492308174")).toBe("1008139492308174");
+    expect(igsidDaIdentidade("phone:+5581999990000")).toBeNull();
+    expect(igsidDaIdentidade(null)).toBeNull();
   });
 });
