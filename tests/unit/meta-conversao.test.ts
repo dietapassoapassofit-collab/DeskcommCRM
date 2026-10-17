@@ -66,7 +66,7 @@ describe("montaEvento", () => {
 
   it("lead qualificado vira Lead, com id próprio e sem valor", () => {
     const e = montaEvento({ ...VENDA, tipo: "lead" }, CRED)!;
-    expect(e.event_name).toBe("Lead");
+    expect(e.event_name).toBe("LeadSubmitted");
     // Id diferente do da venda: o mesmo negócio manda os dois, e id igual faria
     // o Meta descartar o segundo como repetição.
     expect(e.event_id).toBe("lead-1-lead");

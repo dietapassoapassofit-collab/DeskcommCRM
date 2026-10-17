@@ -88,7 +88,8 @@ export interface FatoDoFunil {
 }
 
 export interface EventoDeConversao {
-  event_name: "Purchase" | "Lead";
+  /** O Meta so aceita estes dois nomes quando action_source e business_messaging. */
+  event_name: "Purchase" | "LeadSubmitted";
   event_id: string;
   event_time: number;
   action_source: string;
@@ -122,7 +123,7 @@ export function montaEvento(
   if (Object.keys(userData).length === 0) return null;
 
   const evento: EventoDeConversao = {
-    event_name: fato.tipo === "venda" ? "Purchase" : "Lead",
+    event_name: fato.tipo === "venda" ? "Purchase" : "LeadSubmitted",
     // O sufixo separa os dois eventos do MESMO negócio: sem ele, o `Lead` e o
     // `Purchase` do mesmo cliente teriam o mesmo id e o Meta descartaria o
     // segundo como repetição.
