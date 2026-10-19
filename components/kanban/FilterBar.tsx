@@ -18,6 +18,7 @@ import { OwnerBadge } from "./OwnerBadge";
 import {
   agentOwnerFilter,
   parseAgentOwnerFilter,
+  diaEmRecife,
   type LeadFilters,
 } from "@/lib/kanban/filters";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,31 @@ interface FilterBarProps {
   onChange: (next: LeadFilters) => void;
   leads: Lead[];
 }
+
+/**
+ * Atalhos de periodo. Datas em Recife — `new Date()` do navegador ja esta na
+ * hora local do lojista, mas `diaEmRecife` mantem a mesma conta dos dois lados
+ * mesmo se alguem abrir o board de outro fuso.
+ */
+function atalhoDePeriodo(dias: number): { entradaDe: string; entradaAte: string } {
+  const agora = Date.now();
+  return {
+    entradaDe: diaEmRecife(new Date(agora - (dias - 1) * 86_400_000).toISOString()),
+    entradaAte: diaEmRecife(new Date(agora).toISOString()),
+  };
+}
+
+function inicioDoMes(): { entradaDe: string; entradaAte: string } {
+  const hoje = diaEmRecife(new Date().toISOString());
+  return { entradaDe: `${hoje.slice(0, 7)}-01`, entradaAte: hoje };
+}
+
+const ATALHOS: Array<{ label: string; valor: () => { entradaDe: string; entradaAte: string } }> = [
+  { label: "Hoje", valor: () => atalhoDePeriodo(1) },
+  { label: "7 dias", valor: () => atalhoDePeriodo(7) },
+  { label: "30 dias", valor: () => atalhoDePeriodo(30) },
+  { label: "Este mês", valor: inicioDoMes },
+];
 
 const STATUS_OPTIONS: Array<{ value: NonNullable<LeadFilters["status"]>; label: string }> = [
   { value: "all", label: "Todos" },
@@ -227,11 +253,60 @@ export function FilterBar({ filters, onChange, leads }: FilterBarProps) {
         Parados sem resposta
       </label>
 
+      <div className="flex flex-wrap items-center gap-1 rounded-md border border-border px-2 py-1">
+        <span className="px-1 text-xs text-muted-foreground">Entrou:</span>
+        {ATALHOS.map((a) => {
+          const v = a.valor();
+          const ativo =
+            filters.entradaDe === v.entradaDe && filters.entradaAte === v.entradaAte;
+          return (
+            <Button
+              key={a.label}
+              variant="ghost"
+              size="sm"
+              className={cn("h-7 px-2 text-xs", ativo && "bg-accent/15 text-accent")}
+              onClick={() =>
+                onChange(
+                  ativo
+                    ? { ...filters, entradaDe: undefined, entradaAte: undefined }
+                    : { ...filters, ...v },
+                )
+              }
+            >
+              {a.label}
+            </Button>
+          );
+        })}
+        <input
+          type="date"
+          aria-label="Entrou a partir de"
+          className="h-7 rounded border border-border bg-transparent px-1 text-xs"
+          value={filters.entradaDe ?? ""}
+          max={filters.entradaAte || undefined}
+          onChange={(e) =>
+            onChange({ ...filters, entradaDe: e.target.value || undefined })
+          }
+        />
+        <span className="text-xs text-muted-foreground">até</span>
+        <input
+          type="date"
+          aria-label="Entrou até"
+          className="h-7 rounded border border-border bg-transparent px-1 text-xs"
+          value={filters.entradaAte ?? ""}
+          min={filters.entradaDe || undefined}
+          onChange={(e) =>
+            onChange({ ...filters, entradaAte: e.target.value || undefined })
+          }
+        />
+      </div>
+
       {(filters.search ||
         filters.owner ||
         filters.tag ||
         filters.overdueOnly ||
         filters.paradosOnly ||
+        filters.entradaDe ||
+        filters.entradaAte ||
         (filters.status && filters.status !== "all")) && (
         <Button
           variant="ghost"
