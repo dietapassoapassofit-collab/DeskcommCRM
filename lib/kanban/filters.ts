@@ -34,11 +34,11 @@ export interface LeadFilters {
    */
   paradosOnly?: boolean;
   /**
-   * Entrada no funil, inclusive nas duas pontas, no formato `AAAA-MM-DD`.
+   * Recorte de periodo, inclusive nas duas pontas, no formato `AAAA-MM-DD`.
    *
-   * A pergunta que isto responde e "quantos leads entraram no periodo" — por
-   * isso olha `created_at`, e nao a ultima atividade nem a entrada na coluna
-   * atual: um lead de setembro que o vendedor moveu ontem entrou em setembro.
+   * A data comparada MUDA conforme o negocio — ver `diaDoNegocio`. Os nomes
+   * continuam `entradaDe`/`entradaAte` porque sao os params da URL (`de`/`ate`)
+   * ja publicados, e renomear quebraria link salvo.
    */
   entradaDe?: string;
   entradaAte?: string;
@@ -54,6 +54,21 @@ export interface LeadFilters {
  */
 export function diaEmRecife(iso: string): string {
   return new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Recife" });
+}
+
+/**
+ * A data pela qual o negocio entra (ou nao) no recorte de periodo.
+ *
+ * Negocio FECHADO conta pelo dia em que fechou; o resto, pelo dia em que
+ * entrou no funil. Sao duas perguntas diferentes no mesmo quadro: "quantos
+ * leads entraram" olha a entrada, "quanto vendi" olha a venda. Sem isso, uma
+ * venda desta semana de um lead que chegou em setembro sumiria do recorte de
+ * 7 dias — medido no funil da Space: o negocio "Heitor" entrou em 13/10 e
+ * fechou em 16/10.
+ */
+export function diaDoNegocio(lead: Lead): string | null {
+  const marco = lead.closed_at ?? lead.created_at;
+  return marco ? diaEmRecife(marco) : null;
 }
 
 /**
@@ -149,9 +164,9 @@ export function applyFilters(leads: Lead[], f: LeadFilters): Lead[] {
     }
     if (f.paradosOnly && horasParado(l, agora) < HORAS_SEM_RESPOSTA) return false;
     if (f.entradaDe || f.entradaAte) {
-      // Sem data de criacao nao da para afirmar que entrou no periodo.
-      if (!l.created_at) return false;
-      const dia = diaEmRecife(l.created_at);
+      // Sem data nenhuma nao da para afirmar que cai no periodo.
+      const dia = diaDoNegocio(l);
+      if (!dia) return false;
       if (f.entradaDe && dia < f.entradaDe) return false;
       if (f.entradaAte && dia > f.entradaAte) return false;
     }

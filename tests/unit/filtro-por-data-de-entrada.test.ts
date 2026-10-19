@@ -12,14 +12,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyFilters,
+  diaDoNegocio,
   diaEmRecife,
   filtersFromParams,
   filtersToParams,
 } from "@/lib/kanban/filters";
 import type { Lead } from "@/lib/types/leads";
 
-const lead = (id: string, criadoEm: string): Lead =>
+const lead = (id: string, criadoEm: string, fechadoEm: string | null = null): Lead =>
   ({
+    closed_at: fechadoEm,
     id,
     organization_id: "org",
     pipeline_id: "funil",
@@ -100,5 +102,38 @@ describe("filtro por data de entrada", () => {
     const volta = filtersFromParams(params);
     expect(volta.entradaDe).toBe("2026-10-01");
     expect(volta.entradaAte).toBe("2026-10-19");
+  });
+});
+
+describe("venda conta pelo dia da venda, nao pelo da entrada", () => {
+  // Caso real do funil da Space: entrou em 13/10, fechou em 16/10.
+  const heitor = lead("heitor", "2026-10-13T13:00:00Z", "2026-10-16T13:00:00Z");
+  const aberto = lead("aberto", "2026-10-13T13:00:00Z");
+
+  it("a data do negocio fechado e a do fechamento", () => {
+    expect(diaDoNegocio(heitor)).toBe("2026-10-16");
+    expect(diaDoNegocio(aberto)).toBe("2026-10-13");
+  });
+
+  it("recorte da semana pega a venda, mesmo com o lead vindo de antes", () => {
+    const r = applyFilters([heitor, aberto], {
+      entradaDe: "2026-10-16",
+      entradaAte: "2026-10-19",
+    });
+    expect(r.map((l) => l.id)).toEqual(["heitor"]);
+  });
+
+  it("no recorte da entrada, a venda ja fechada fica de fora", () => {
+    const r = applyFilters([heitor, aberto], {
+      entradaDe: "2026-10-13",
+      entradaAte: "2026-10-13",
+    });
+    expect(r.map((l) => l.id)).toEqual(["aberto"]);
+  });
+
+  it("venda de setembro nao aparece no recorte de outubro", () => {
+    const antiga = lead("antiga", "2026-09-01T13:00:00Z", "2026-09-20T13:00:00Z");
+    const r = applyFilters([antiga], { entradaDe: "2026-10-01" });
+    expect(r).toHaveLength(0);
   });
 });

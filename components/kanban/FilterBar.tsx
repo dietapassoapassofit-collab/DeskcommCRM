@@ -254,7 +254,12 @@ export function FilterBar({ filters, onChange, leads }: FilterBarProps) {
       </label>
 
       <div className="flex flex-wrap items-center gap-1 rounded-md border border-border px-2 py-1">
-        <span className="px-1 text-xs text-muted-foreground">Entrou:</span>
+        <span
+          className="px-1 text-xs text-muted-foreground"
+          title="Negócio fechado conta pelo dia da venda; o resto, pelo dia em que entrou no funil"
+        >
+          Período:
+        </span>
         {ATALHOS.map((a) => {
           const v = a.valor();
           const ativo =
@@ -279,7 +284,7 @@ export function FilterBar({ filters, onChange, leads }: FilterBarProps) {
         })}
         <input
           type="date"
-          aria-label="Entrou a partir de"
+          aria-label="Período a partir de"
           className="h-7 rounded border border-border bg-transparent px-1 text-xs"
           value={filters.entradaDe ?? ""}
           max={filters.entradaAte || undefined}
@@ -290,7 +295,7 @@ export function FilterBar({ filters, onChange, leads }: FilterBarProps) {
         <span className="text-xs text-muted-foreground">até</span>
         <input
           type="date"
-          aria-label="Entrou até"
+          aria-label="Período até"
           className="h-7 rounded border border-border bg-transparent px-1 text-xs"
           value={filters.entradaAte ?? ""}
           min={filters.entradaDe || undefined}
